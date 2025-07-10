@@ -1,9 +1,6 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UnityEditor;
+using System.Linq;
 
 public enum ProbeVolumeDebugMode
 {
@@ -13,159 +10,253 @@ public enum ProbeVolumeDebugMode
 }
 
 [ExecuteAlways]
-//[System.Serializable]
 public class ProbeVolume : MonoBehaviour
 {
-    public GameObject probePrefab;
-
-    RenderTexture RT_WorldPos;
-    RenderTexture RT_Normal;
-    RenderTexture RT_Albedo;
+    public Probe probePrefab;
 
     public int probeSizeX = 8;
+    
     public int probeSizeY = 4;
+    
     public int probeSizeZ = 8;
+    
     public float probeGridSize = 2.0f;
 
     public ProbeVolumeData data;
 
-    public ComputeBuffer coefficientVoxel;          // array for each probe's SH coefficient
-    public ComputeBuffer lastFrameCoefficientVoxel; // last frame for inf bounce
-    int[] cofficientVoxelClearValue;
+    /// <summary>
+    /// Array for each probe's SH coefficient
+    /// </summary>
+    public ComputeBuffer CoefficientVoxel { get; private set; }
+    
+    /// <summary>
+    /// Last frame voxel for inf bounce
+    /// </summary>
+    public ComputeBuffer LastFrameCoefficientVoxel { get; private set; }
+    
+    private int[] _cofficientVoxelClearValue;
 
     [Range(0.0f, 50.0f)]
-    public float skyLightIntensity = 1.0f;
+    public float skyLightIntensity = 7.0f;
 
     [Range(0.0f, 50.0f)]
-    public float GIIntensity = 1.0f;
+    public float indirectIntensity = 12.0f;
 
-    public ProbeVolumeDebugMode debugMode = ProbeVolumeDebugMode.ProbeRadiance;
+    public ProbeVolumeDebugMode debugMode;
 
-    public GameObject[] probes;
+    public Probe[] Probes { get; private set; }
 
-    void Start()
+    private bool _isDataInitialized;
+
+    private void Start()
     {
         GenerateProbes();
-        data.TryLoadSurfelData(this);
-        debugMode = ProbeVolumeDebugMode.ProbeGrid;
+        TryLoadSurfelData(data);
     }
 
-    void Update()
+#if UNITY_EDITOR
+    private void Update()
     {
-        
+        if (Application.isPlaying) return;
+        if (!IsGPUValid())
+        {
+            GenerateProbes();
+            TryLoadSurfelData(data);
+        }
     }
+#endif
 
-    void OnDestroy()
+    private void OnDestroy()
     {
-        if(coefficientVoxel!=null) coefficientVoxel.Release();
-        if(lastFrameCoefficientVoxel != null) lastFrameCoefficientVoxel.Release();
+        CoefficientVoxel?.Release();
+        LastFrameCoefficientVoxel?.Release();
     }
-
-    // for DEBUG
-    void OnDrawGizmos()
+    
+    private void OnDrawGizmos()
     {
         Gizmos.DrawCube(GetVoxelMinCorner(), new Vector3(1,1,1));
 
-        if(probes!=null)
+        if (Probes != null)
         {
-            foreach (var go in probes)
+            foreach (var probe in Probes)
             {
-                Probe probe = go.GetComponent<Probe>(); 
-                if(debugMode==ProbeVolumeDebugMode.ProbeGrid)
+                if (debugMode == ProbeVolumeDebugMode.ProbeGrid)
                 {
-                    Vector3 cubeSize = new Vector3(probeGridSize/2, probeGridSize/2, probeGridSize/2);
+                    Vector3 cubeSize = new Vector3(probeGridSize / 2, probeGridSize / 2, probeGridSize / 2);
                     Gizmos.DrawWireCube(probe.transform.position + cubeSize, cubeSize * 2.0f);
                 }
-                
-                MeshRenderer meshRenderer = go.GetComponent<MeshRenderer>();
-                //meshRenderer.enabled = (debugMode == ProbeVolumeDebugMode.ProbeRadiance);
-                // hide in game
-                if(Application.isPlaying) meshRenderer.enabled = false;
-                if(debugMode == ProbeVolumeDebugMode.None) meshRenderer.enabled = false;
+
+                MeshRenderer meshRenderer = probe.GetComponent<MeshRenderer>();
+                if (Application.isPlaying) meshRenderer.enabled = false;
+                if (debugMode == ProbeVolumeDebugMode.None) meshRenderer.enabled = false;
             }
         }
     }
 
-    // spawn probes to world
-    public void GenerateProbes()
+    public bool IsGPUValid()
     {
-        if(probes != null)
+        if (!Probes.Any()) return false;
+        // Is GPU data prepared.
+        if (!(CoefficientVoxel?.IsValid() ?? false) || !(LastFrameCoefficientVoxel?.IsValid() ?? false)) return false;
+        
+        // Ignore when component is disabled.
+        return enabled;
+    }
+
+    public bool IsActivate()
+    {
+        if (!_isDataInitialized) return false;
+        return IsGPUValid();
+    }
+
+    /// <summary>
+    /// load surfel data from storage
+    /// </summary>
+    /// <param name="surfelData"></param>
+    public void TryLoadSurfelData(ProbeVolumeData surfelData)
+    {
+        var surfelStorageBuffer = surfelData.surfelStorageBuffer;
+        int probeNum = probeSizeX * probeSizeY * probeSizeZ;
+        int surfelPerProbe = 512;
+        int floatPerSurfel = 10;
+        bool dataDirty = surfelStorageBuffer.Length != probeNum * surfelPerProbe * floatPerSurfel;
+        bool posDirty = transform.position != surfelData.volumePosition;
+        if (posDirty || dataDirty)
         {
-            for(int i=0; i<probes.Length; i++)
-            {
-                DestroyImmediate(probes[i]);
-            }
+            _isDataInitialized = false;
+            Debug.LogWarning("Volume data is out of date, please regenerate prt data.");
+            return;
         }
-        if(coefficientVoxel != null) coefficientVoxel.Release();
-        if(lastFrameCoefficientVoxel != null) lastFrameCoefficientVoxel.Release();
+
+        int j = 0;
+        foreach (var probe in Probes)
+        {
+            for (int i = 0; i < probe.readBackBuffer.Length; i++)
+            {
+                probe.readBackBuffer[i].position.x = surfelStorageBuffer[j++];
+                probe.readBackBuffer[i].position.y = surfelStorageBuffer[j++];
+                probe.readBackBuffer[i].position.z = surfelStorageBuffer[j++];
+                probe.readBackBuffer[i].normal.x = surfelStorageBuffer[j++];
+                probe.readBackBuffer[i].normal.y = surfelStorageBuffer[j++];
+                probe.readBackBuffer[i].normal.z = surfelStorageBuffer[j++];
+                probe.readBackBuffer[i].albedo.x = surfelStorageBuffer[j++];
+                probe.readBackBuffer[i].albedo.y = surfelStorageBuffer[j++];
+                probe.readBackBuffer[i].albedo.z = surfelStorageBuffer[j++];
+                probe.readBackBuffer[i].skyMask = surfelStorageBuffer[j++];
+            }
+
+            probe.surfels.SetData(probe.readBackBuffer);
+        }
+
+        _isDataInitialized = true;
+    }
+
+    private void ReleaseProbes()
+    {
+        for (int i = transform.childCount -1; i >=0; i--)
+        {
+            DestroyImmediate(transform.GetChild(i).gameObject);
+        }
+
+        Probes = null;
+    }
+
+    /// <summary>
+    /// Create probes based on volume current location.
+    /// </summary>
+    private void GenerateProbes()
+    {
+        ReleaseProbes();
+
+        CoefficientVoxel?.Release();
+        LastFrameCoefficientVoxel?.Release();
 
         int probeNum = probeSizeX * probeSizeY * probeSizeZ;
 
         // generate probe actors
-        probes = new GameObject[probeNum];
-        for(int x=0; x<probeSizeX; x++)
+        Probes = new Probe[probeNum];
+        for (int x = 0; x < probeSizeX; x++)
         {
-            for(int y=0; y<probeSizeY; y++)
+            for (int y = 0; y < probeSizeY; y++)
             {
-                for(int z=0; z<probeSizeZ; z++)
+                for (int z = 0; z < probeSizeZ; z++)
                 {
                     Vector3 relativePos = new Vector3(x, y, z) * probeGridSize;
-                    Vector3 parentPos = gameObject.transform.position;
+                    Vector3 parentPos = transform.position;
 
                     // setup probe
                     int index = x * probeSizeY * probeSizeZ + y * probeSizeZ + z;
-                    probes[index] = Instantiate(probePrefab, gameObject.transform) as GameObject;
-                    probes[index].transform.position = relativePos + parentPos; 
-                    probes[index].GetComponent<Probe>().indexInProbeVolume = index;
-                    probes[index].GetComponent<Probe>().TryInit();
+                    Probes[index] = Instantiate(probePrefab, gameObject.transform);
+                    Probes[index].gameObject.hideFlags = HideFlags.HideAndDontSave;
+                    Probes[index].transform.position = relativePos + parentPos;
+                    Probes[index].indexInProbeVolume = index;
+                    Probes[index].TryInit();
                 }
             }
         }
 
         // generate 1D "Voxel" buffer to storage SH coefficients
-        coefficientVoxel = new ComputeBuffer(probeNum * 27, sizeof(int));
-        lastFrameCoefficientVoxel = new ComputeBuffer(probeNum * 27, sizeof(int));
-        cofficientVoxelClearValue = new int[probeNum *  27];
-        for(int i=0; i<cofficientVoxelClearValue.Length; i++) 
+        CoefficientVoxel = new ComputeBuffer(probeNum * 27, sizeof(int));
+        LastFrameCoefficientVoxel = new ComputeBuffer(probeNum * 27, sizeof(int));
+        _cofficientVoxelClearValue = new int[probeNum * 27];
+        for (int i = 0; i < _cofficientVoxelClearValue.Length; i++)
         {
-            cofficientVoxelClearValue[i] = 0;
+            _cofficientVoxelClearValue[i] = 0;
         }  
     }
 
-    // precompute surfel
-    public void ProbeCapture()
+    /// <summary>
+    /// Precompute surfel and bake into <see cref="ProbeVolumeData"/>
+    /// </summary>
+    public void BakeData()
     {
-        // hide debug sphere
-        foreach (var go in probes)
+        if (!Probes.Any())
         {
-            go.GetComponent<MeshRenderer>().enabled = false;
+            GenerateProbes();
+        }
+        
+        // Hide debug spheres
+        foreach (var probe in Probes)
+        {
+            probe.GetComponent<MeshRenderer>().enabled = false;
         }
 
-        // cap
-        foreach (var go in probes)
+        // Capture surfel using brute force cubemap method.
+        foreach (var probe in Probes)
         {
-            Probe probe = go.GetComponent<Probe>(); 
             probe.CaptureGbufferCubemaps();
         }
 
         data.StorageSurfelData(this);
     }
+    
+    /// <summary>
+    /// Clear surfel and <see cref="ProbeVolumeData"/>
+    /// </summary>
+    public void ClearData()
+    {
+        data.Clear();
+        GenerateProbes();
+    }
 
     public void ClearCoefficientVoxel(CommandBuffer cmd)
     {
-        if(coefficientVoxel==null || cofficientVoxelClearValue==null) return;
-        cmd.SetBufferData(coefficientVoxel, cofficientVoxelClearValue);
+        if (CoefficientVoxel == null || _cofficientVoxelClearValue == null) return;
+        cmd.SetBufferData(CoefficientVoxel, _cofficientVoxelClearValue);
     }
 
-    // 保存上一帧的球谐系数
+    /// <summary>
+    /// Swap last frame voxel with current voxel
+    /// </summary>
     public void SwapLastFrameCoefficientVoxel()
     {
-        if(coefficientVoxel==null || lastFrameCoefficientVoxel==null) return;
-        (coefficientVoxel, lastFrameCoefficientVoxel) = (lastFrameCoefficientVoxel, coefficientVoxel);
+        if (CoefficientVoxel == null || LastFrameCoefficientVoxel == null) return;
+        (CoefficientVoxel, LastFrameCoefficientVoxel) = (LastFrameCoefficientVoxel, CoefficientVoxel);
     }
 
+    
     public Vector3 GetVoxelMinCorner()
     {
-        return gameObject.transform.position;
+        return transform.position;
     }
 }

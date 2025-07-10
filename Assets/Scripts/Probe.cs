@@ -1,6 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
-using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -24,37 +21,46 @@ public enum ProbeDebugMode
 [ExecuteAlways]
 public class Probe : MonoBehaviour
 {
-    const int tX = 32;
-    const int tY = 16;
-    const int rayNum = tX * tY;         // 512 per probe
-    const int surfelByteSize = 3 * 12 + 4;  // sizeof(Surfel)
+    private const int tX = 32;
+    
+    private const int tY = 16;
+    
+    private const int rayNum = tX * tY;         // 512 per probe
+    
+    private const int surfelByteSize = 3 * 12 + 4;  // sizeof(Surfel)
 
-    MaterialPropertyBlock matPropBlock;
+    private MaterialPropertyBlock matPropBlock;
     
     public Surfel[] readBackBuffer; // CPU side surfel array, for debug
+    
     public ComputeBuffer surfels;   // GPU side surfel array
 
-    Vector3[] radianceDebugBuffer;
+    private Vector3[] radianceDebugBuffer;
+    
     public ComputeBuffer surfelRadiance;
-
-    const int coefficientSH9ByteSize = 9 * 3 * 4;
-    int[] coefficientClearValue;
+    
+    private int[] coefficientClearValue;
+    
     public ComputeBuffer coefficientSH9; // GPU side SH9 coefficient, size: 9x3=27
 
     public RenderTexture RT_WorldPos;
+    
     public RenderTexture RT_Normal;
+    
     public RenderTexture RT_Albedo;
 
     public ComputeShader surfelSampleCS;
+    
     public ComputeShader surfelReLightCS;
 
     [HideInInspector]
     public int indexInProbeVolume = -1; // set by parent
-    ComputeBuffer tempBuffer;
+
+    private ComputeBuffer tempBuffer;
 
     public ProbeDebugMode debugMode;
 
-    void Start()
+    private void Start()
     {
         TryInit();
     }
@@ -62,45 +68,45 @@ public class Probe : MonoBehaviour
     // for debug
     public void TryInit()
     {
-        //if(b_is_init_finished) return;
-        //b_is_init_finished = true;    
-
-        if(surfels==null) 
+        if (surfels == null)
             surfels = new ComputeBuffer(rayNum, surfelByteSize);
 
-        if(coefficientSH9==null) 
+        if (coefficientSH9 == null)
         {
             coefficientSH9 = new ComputeBuffer(27, sizeof(int));
             coefficientClearValue = new int[27];
-            for(int i=0; i<27; i++) coefficientClearValue[i] = 0;
+            for (int i = 0; i < 27; i++)
+            {
+                coefficientClearValue[i] = 0;
+            }
         }
 
-        if(readBackBuffer==null) 
+        if (readBackBuffer == null)
             readBackBuffer = new Surfel[rayNum];
 
-        if(surfelRadiance==null) 
+        if (surfelRadiance == null)
             surfelRadiance = new ComputeBuffer(rayNum, sizeof(float) * 3);
-            
-        if(radianceDebugBuffer==null) 
+
+        if (radianceDebugBuffer == null)
             radianceDebugBuffer = new Vector3[rayNum];
-        
-        if(matPropBlock==null)
+
+        if (matPropBlock == null)
             matPropBlock = new MaterialPropertyBlock();
-        
-        if(tempBuffer==null)
+
+        if (tempBuffer == null)
             tempBuffer = new ComputeBuffer(1, 4);
     }
 
-    void OnDestroy()
+    private void OnDestroy()
     {
-        if(surfels!=null) surfels.Release();
-        if(coefficientSH9!=null) coefficientSH9.Release();
-        if(surfelRadiance!=null) surfelRadiance.Release();
-        if(tempBuffer!=null) tempBuffer.Release();
+        surfels?.Release();
+        coefficientSH9?.Release();
+        surfelRadiance?.Release();
+        tempBuffer?.Release();
     }
 
     // for DEBUG
-    void OnDrawGizmos()
+    private void OnDrawGizmos()
     {
         Vector3 probePos = gameObject.transform.position;
         
@@ -143,15 +149,15 @@ public class Probe : MonoBehaviour
                 Gizmos.color = Color.red;
             }
             */
-            if(debugMode == ProbeDebugMode.SphereDistribution)
+            if (debugMode == ProbeDebugMode.SphereDistribution)
             {
-                if(isSky) Gizmos.color = Color.blue;
+                if (isSky) Gizmos.color = Color.blue;
                 Gizmos.DrawSphere(dir + probePos, 0.025f);
             }
 
-            if(debugMode == ProbeDebugMode.SampleDirection)
+            if (debugMode == ProbeDebugMode.SampleDirection)
             {
-                if(isSky)
+                if (isSky)
                 {
                     Gizmos.color = Color.blue;
                     Gizmos.DrawLine(probePos, probePos + dir * 25.0f);
@@ -163,23 +169,23 @@ public class Probe : MonoBehaviour
                 }
             }
 
-            if(debugMode == ProbeDebugMode.Surfel)
+            if (debugMode == ProbeDebugMode.Surfel)
             {
-                if(isSky) continue;
+                if (isSky) continue;
                 Gizmos.DrawSphere(pos, 0.05f);
                 Gizmos.DrawLine(pos, pos + normal * 0.25f);
             }
 
-            if(debugMode == ProbeDebugMode.SurfelRadiance)
+            if (debugMode == ProbeDebugMode.SurfelRadiance)
             {
-                if(isSky) continue;
+                if (isSky) continue;
                 Gizmos.color = new Color(radiance.x, radiance.y, radiance.z);
                 Gizmos.DrawSphere(pos, 0.05f);
             }
         }
     }
 
-    void BatchSetShader(GameObject[] gameObjects, Shader shader)
+    private void BatchSetShader(GameObject[] gameObjects, Shader shader)
     {
         foreach(var go in gameObjects)
         {
@@ -196,16 +202,21 @@ public class Probe : MonoBehaviour
         TryInit();
 
         // create camera
-        GameObject go = new GameObject("CubemapCamera");
-        go.transform.position = transform.position;
-        go.transform.rotation = Quaternion.identity;
-        go.AddComponent<Camera>();
-        Camera camera = go.GetComponent<Camera>();
+        GameObject go = new GameObject("CubemapCamera")
+        {
+            transform =
+            {
+                position = transform.position,
+                rotation = Quaternion.identity
+            }
+        };
+        Camera camera = go.AddComponent<Camera>();
+        camera.cameraType = CameraType.Reflection;
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0.0f, 0.0f, 0.0f, 0.0f);
 
         // find all objects
-        GameObject[] gameObjects = FindObjectsOfType(typeof(GameObject)) as GameObject[];
+        GameObject[] gameObjects = (GameObject[])FindObjectsOfType(typeof(GameObject));
 
         // capture gbuffer worldpos
         BatchSetShader(gameObjects, Shader.Find("CasualPRT/GbufferWorldPos"));
@@ -227,8 +238,13 @@ public class Probe : MonoBehaviour
         DestroyImmediate(go);
     }
 
-    // sample surfel from gbuffer cubemaps
-    void SampleSurfels(RenderTexture worldPosCubemap, RenderTexture normalCubemap, RenderTexture albedoCubemap)
+    /// <summary>
+    /// sample surfel from gbuffer cubemaps
+    /// </summary>
+    /// <param name="worldPosCubemap"></param>
+    /// <param name="normalCubemap"></param>
+    /// <param name="albedoCubemap"></param>
+    private void SampleSurfels(RenderTexture worldPosCubemap, RenderTexture normalCubemap, RenderTexture albedoCubemap)
     {
         var kid = surfelSampleCS.FindKernel("CSMain");
 
@@ -254,7 +270,7 @@ public class Probe : MonoBehaviour
         var kid = surfelReLightCS.FindKernel("CSMain");
 
         // set necessary data and start sample
-        Vector3 p = gameObject.transform.position;
+        Vector3 p = transform.position;
         cmd.SetComputeVectorParam(surfelReLightCS, "_probePos", new Vector4(p.x, p.y, p.z, 1.0f));
         cmd.SetComputeBufferParam(surfelReLightCS, kid, "_surfels", surfels);
         cmd.SetComputeBufferParam(surfelReLightCS, kid, "_coefficientSH9", coefficientSH9);
@@ -263,23 +279,13 @@ public class Probe : MonoBehaviour
         // if probe has parent volume, "indexInProbeVolume" will >= 0
         // then SH will output to "_coefficientSH9Voxel" buffer 
         var parent = transform.parent;
-        ProbeVolume probeVolume = parent==null ? null : parent.gameObject.GetComponent<ProbeVolume>();
-        ComputeBuffer coefficientVoxel = probeVolume==null ? tempBuffer : probeVolume.coefficientVoxel;
+        ProbeVolume probeVolume = parent == null ? null : parent.GetComponent<ProbeVolume>();
+        ComputeBuffer coefficientVoxel = probeVolume == null ? tempBuffer : probeVolume.CoefficientVoxel;
         cmd.SetComputeBufferParam(surfelReLightCS, kid, "_coefficientVoxel", coefficientVoxel);
         cmd.SetComputeIntParam(surfelReLightCS, "_indexInProbeVolume", indexInProbeVolume);
 
         // start CS
         cmd.SetBufferData(coefficientSH9, coefficientClearValue);
         cmd.DispatchCompute(surfelReLightCS, kid, 1, 1, 1);
-
-        /*
-        int[] debug9 = new int[27];
-        coefficientSH9.GetData(debug9);
-        foreach (var item in debug9)
-        {
-            Debug.Log(item);
-        }
-        Debug.Log("-------------------------------------------");
-        */
     }
 }

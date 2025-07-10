@@ -6,7 +6,7 @@ Shader "CasualPRT/GbufferAlbedo"
     }
     SubShader
     {
-        Tags { "RenderType"="Opaque" "RenderPipeline" = "UniversalRenderPipeline" }
+        Tags { "RenderType"="Opaque" "RenderPipeline" = "UniversalPipeline" }
         LOD 100
 
         Pass

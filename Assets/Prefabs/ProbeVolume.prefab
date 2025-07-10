@@ -24,13 +24,13 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3888200902692492090}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &8055537974376846555
 MonoBehaviour:
@@ -44,7 +44,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 82859215aa6ff494fb82200142b9e34e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  probePrefab: {fileID: 8812335778316382696, guid: 53b85662452893545bf18e05217963fa, type: 3}
+  probePrefab: {fileID: 6483852398316063883, guid: 53b85662452893545bf18e05217963fa, type: 3}
   probeSizeX: 9
   probeSizeY: 3
   probeSizeZ: 5
@@ -53,4 +53,3 @@ MonoBehaviour:
   skyLightIntensity: 7
   GIIntensity: 12
   debugMode: 0
-  probes: []

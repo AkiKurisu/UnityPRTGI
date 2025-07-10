@@ -119,7 +119,7 @@ float3 TrilinearInterpolationFloat3(in float3 value[8], float3 rate)
 }
 
 float3 SampleSHVoxel(
-    in float4 worldPos, 
+    in float3 worldPos, 
     in float3 albedo, 
     in float3 normal,
     in StructuredBuffer<int> _coefficientVoxel,
@@ -153,7 +153,7 @@ float3 SampleSHVoxel(
 
         // normal weight blend
         float3 probePos = GetProbePositionFromIndex3D(idx3, _coefficientVoxelGridSize, _coefficientVoxelCorner);
-        float3 dir = normalize(probePos - worldPos.xyz);
+        float3 dir = normalize(probePos - worldPos);
         float normalWeight = saturate(dot(dir, normal));
         weight += normalWeight;
 
