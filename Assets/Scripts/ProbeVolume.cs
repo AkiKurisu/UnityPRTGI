@@ -15,26 +15,25 @@ public class ProbeVolume : MonoBehaviour
     public Probe probePrefab;
 
     public int probeSizeX = 8;
-    
+
     public int probeSizeY = 4;
-    
+
     public int probeSizeZ = 8;
-    
+
     public float probeGridSize = 2.0f;
 
     public ProbeVolumeData data;
 
     /// <summary>
-    /// Array for each probe's SH coefficient
+    /// 3D Texture to store SH coefficients (replaces ComputeBuffer)
+    /// Layout: [probeSizeX, probeSizeZ, probeSizeY * 9]
     /// </summary>
-    public ComputeBuffer CoefficientVoxel { get; private set; }
-    
+    public RenderTexture CoefficientVoxel3D { get; private set; }
+
     /// <summary>
-    /// Last frame voxel for inf bounce
+    /// Last frame 3D texture for infinite bounce
     /// </summary>
-    public ComputeBuffer LastFrameCoefficientVoxel { get; private set; }
-    
-    private int[] _cofficientVoxelClearValue;
+    public RenderTexture LastFrameCoefficientVoxel3D { get; private set; }
 
     [Range(0.0f, 50.0f)]
     public float skyLightIntensity = 7.0f;
@@ -43,6 +42,8 @@ public class ProbeVolume : MonoBehaviour
     public float indirectIntensity = 12.0f;
 
     public ProbeVolumeDebugMode debugMode;
+
+    private const RenderTextureFormat Texture3DFormat = RenderTextureFormat.RInt;
 
     public Probe[] Probes { get; private set; }
 
@@ -68,13 +69,22 @@ public class ProbeVolume : MonoBehaviour
 
     private void OnDestroy()
     {
-        CoefficientVoxel?.Release();
-        LastFrameCoefficientVoxel?.Release();
+        if (CoefficientVoxel3D != null)
+        {
+            CoefficientVoxel3D.Release();
+            CoefficientVoxel3D = null;
+        }
+
+        if (LastFrameCoefficientVoxel3D != null)
+        {
+            LastFrameCoefficientVoxel3D.Release();
+            LastFrameCoefficientVoxel3D = null;
+        }
     }
-    
+
     private void OnDrawGizmos()
     {
-        Gizmos.DrawCube(GetVoxelMinCorner(), new Vector3(1,1,1));
+        Gizmos.DrawCube(GetVoxelMinCorner(), new Vector3(1, 1, 1));
 
         if (Probes != null)
         {
@@ -95,18 +105,12 @@ public class ProbeVolume : MonoBehaviour
 
     public bool IsGPUValid()
     {
-        if (!Probes.Any()) return false;
-        // Is GPU data prepared.
-        if (!(CoefficientVoxel?.IsValid() ?? false) || !(LastFrameCoefficientVoxel?.IsValid() ?? false)) return false;
-        
-        // Ignore when component is disabled.
-        return enabled;
+        return CoefficientVoxel3D != null && LastFrameCoefficientVoxel3D != null;
     }
 
     public bool IsActivate()
     {
-        if (!_isDataInitialized) return false;
-        return IsGPUValid();
+        return CoefficientVoxel3D != null && LastFrameCoefficientVoxel3D != null && _isDataInitialized;
     }
 
     /// <summary>
@@ -153,9 +157,13 @@ public class ProbeVolume : MonoBehaviour
 
     private void ReleaseProbes()
     {
-        for (int i = transform.childCount -1; i >=0; i--)
+        if (Probes != null)
         {
-            DestroyImmediate(transform.GetChild(i).gameObject);
+            foreach (var probe in Probes)
+            {
+                if (probe != null)
+                    DestroyImmediate(probe.gameObject);
+            }
         }
 
         Probes = null;
@@ -168,8 +176,8 @@ public class ProbeVolume : MonoBehaviour
     {
         ReleaseProbes();
 
-        CoefficientVoxel?.Release();
-        LastFrameCoefficientVoxel?.Release();
+        CoefficientVoxel3D?.Release();
+        LastFrameCoefficientVoxel3D?.Release();
 
         int probeNum = probeSizeX * probeSizeY * probeSizeZ;
 
@@ -195,14 +203,30 @@ public class ProbeVolume : MonoBehaviour
             }
         }
 
-        // generate 1D "Voxel" buffer to storage SH coefficients
-        CoefficientVoxel = new ComputeBuffer(probeNum * 27, sizeof(int));
-        LastFrameCoefficientVoxel = new ComputeBuffer(probeNum * 27, sizeof(int));
-        _cofficientVoxelClearValue = new int[probeNum * 27];
-        for (int i = 0; i < _cofficientVoxelClearValue.Length; i++)
+        // Create 3D textures for SH coefficients
+        // Layout: [probeSizeX, probeSizeZ, probeSizeY * 9 * 3]
+        // Each depth slice corresponds to one RGB component of SH coefficient
+        int depth = probeSizeY * 9 * 3; // 9 SH coefficients per probe, 3 components (RGB) per coefficient
+
+        CoefficientVoxel3D = new RenderTexture(probeSizeX, probeSizeZ, 0, Texture3DFormat)
         {
-            _cofficientVoxelClearValue[i] = 0;
-        }  
+            dimension = TextureDimension.Tex3D,
+            volumeDepth = depth,
+            enableRandomWrite = true,
+            filterMode = FilterMode.Point,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        CoefficientVoxel3D.Create();
+
+        LastFrameCoefficientVoxel3D = new RenderTexture(probeSizeX, probeSizeZ, 0, Texture3DFormat)
+        {
+            dimension = TextureDimension.Tex3D,
+            volumeDepth = depth,
+            enableRandomWrite = true,
+            filterMode = FilterMode.Point,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        LastFrameCoefficientVoxel3D.Create();
     }
 
     /// <summary>
@@ -214,7 +238,7 @@ public class ProbeVolume : MonoBehaviour
         {
             GenerateProbes();
         }
-        
+
         // Hide debug spheres
         foreach (var probe in Probes)
         {
@@ -229,7 +253,7 @@ public class ProbeVolume : MonoBehaviour
 
         data.StorageSurfelData(this);
     }
-    
+
     /// <summary>
     /// Clear surfel and <see cref="ProbeVolumeData"/>
     /// </summary>
@@ -241,8 +265,9 @@ public class ProbeVolume : MonoBehaviour
 
     public void ClearCoefficientVoxel(CommandBuffer cmd)
     {
-        if (CoefficientVoxel == null || _cofficientVoxelClearValue == null) return;
-        cmd.SetBufferData(CoefficientVoxel, _cofficientVoxelClearValue);
+        // Clear 3D texture
+        cmd.SetRenderTarget(CoefficientVoxel3D, 0, CubemapFace.Unknown, -1);
+        cmd.ClearRenderTarget(false, true, Color.black);
     }
 
     /// <summary>
@@ -250,11 +275,11 @@ public class ProbeVolume : MonoBehaviour
     /// </summary>
     public void SwapLastFrameCoefficientVoxel()
     {
-        if (CoefficientVoxel == null || LastFrameCoefficientVoxel == null) return;
-        (CoefficientVoxel, LastFrameCoefficientVoxel) = (LastFrameCoefficientVoxel, CoefficientVoxel);
+        // Swap 3D textures
+        (LastFrameCoefficientVoxel3D, CoefficientVoxel3D) = (CoefficientVoxel3D, LastFrameCoefficientVoxel3D);
     }
 
-    
+
     public Vector3 GetVoxelMinCorner()
     {
         return transform.position;

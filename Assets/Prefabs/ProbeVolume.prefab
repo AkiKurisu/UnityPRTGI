@@ -51,5 +51,5 @@ MonoBehaviour:
   probeGridSize: 4
   data: {fileID: 11400000, guid: 33f1928f6479bc34787575bb1184cece, type: 2}
   skyLightIntensity: 7
-  GIIntensity: 12
+  indirectIntensity: 12
   debugMode: 0

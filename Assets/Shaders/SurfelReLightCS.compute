@@ -16,27 +16,46 @@ struct Surfel
     float3 albedo;
     float skyMask;
 };
+
 RWStructuredBuffer<Surfel> _surfels;
-RWStructuredBuffer<float3> _surfelRadiance; // for debug
+RWStructuredBuffer<int> _coefficientSH9;
+RWTexture3D<int> _coefficientVoxel3D;
+Texture3D<int> _lastFrameCoefficientVoxel3D;
 
 float _skyLightIntensity;
 float4 _probePos;
-
-// 使用定点数存储小数, 因为 compute shader 的 InterlockedAdd 不支持 float
-// array size: 3x9=27
-RWStructuredBuffer<int> _coefficientSH9;  
-
-// 探针组的球谐系数
-// array size: A x B x C x 27, 取决于 volume 的 size
 int _indexInProbeVolume;
-RWStructuredBuffer<int> _coefficientVoxel;  
-StructuredBuffer<int> _lastFrameCoefficientVoxel;
 float _GIIntensity;
-
-// volume param
 float _coefficientVoxelGridSize;
 float4 _coefficientVoxelCorner;
 float4 _coefficientVoxelSize;
+
+// =============================== Debugging =================================== //
+RWStructuredBuffer<float3> _surfelRadiance;
+// =============================== Debugging =================================== //
+
+// Convert probe index to 3D texture coordinates
+int3 ProbeIndexToTexture3DCoord(int probeIndex, int shIndex, int componentIndex, float4 voxelSize)
+{
+    // Convert 1D probe index to 3D grid coordinates
+    int probeSizeY = int(voxelSize.y);
+    int probeSizeZ = int(voxelSize.z);
+    
+    int x = probeIndex / (probeSizeY * probeSizeZ);
+    int temp = probeIndex % (probeSizeY * probeSizeZ);
+    int y = temp / probeSizeZ;
+    int z = temp % probeSizeZ;
+    
+    // Convert to 3D texture coordinates
+    // Layout: [probeSizeX, probeSizeZ, probeSizeY * 9 * 3]
+    // componentIndex: 0=R, 1=G, 2=B
+    int3 texCoord;
+    texCoord.x = x;
+    texCoord.y = z;  // Z becomes Y in texture
+    texCoord.z = (y * 9 + shIndex) * 3 + componentIndex;  // (Y * 9 + SH index) * 3 + component
+    
+    return texCoord;
+}
 
 [numthreads(32,16,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
@@ -69,11 +88,12 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     radiance += skyColor * surfel.skyMask * _skyLightIntensity;  
 
     // radiance from last frame
-    float3 history = SampleSHVoxel(
+    float3 history = float3(0, 0, 0);
+    history = SampleSHVoxel3D(
         surfel.position, 
         surfel.albedo, 
         surfel.normal,
-        _lastFrameCoefficientVoxel, 
+        _lastFrameCoefficientVoxel3D,
         _coefficientVoxelGridSize,
         _coefficientVoxelCorner,
         _coefficientVoxelSize
@@ -105,17 +125,20 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     // storage to volume
     if (_indexInProbeVolume >= 0)
     {
-        const int coefficientByteSize = 27;
-        int offset = _indexInProbeVolume * coefficientByteSize;
+        // Write to 3D texture using reduced coefficients
+        // Write each RGB component separately
         for (int i = 0; i < 9; i++)
         {
-            InterlockedAdd(_coefficientVoxel[offset + i * 3 + 0], EncodeFloatToInt(c[i].x));
-            InterlockedAdd(_coefficientVoxel[offset + i * 3 + 1], EncodeFloatToInt(c[i].y));
-            InterlockedAdd(_coefficientVoxel[offset + i * 3 + 2], EncodeFloatToInt(c[i].z));
+            int3 texCoordR = ProbeIndexToTexture3DCoord(_indexInProbeVolume, i, 0, _coefficientVoxelSize);
+            int3 texCoordG = ProbeIndexToTexture3DCoord(_indexInProbeVolume, i, 1, _coefficientVoxelSize);
+            int3 texCoordB = ProbeIndexToTexture3DCoord(_indexInProbeVolume, i, 2, _coefficientVoxelSize);
+                
+            InterlockedAdd(_coefficientVoxel3D[texCoordR], EncodeFloatToInt(c[i].x));
+            InterlockedAdd(_coefficientVoxel3D[texCoordG], EncodeFloatToInt(c[i].y));
+            InterlockedAdd(_coefficientVoxel3D[texCoordB], EncodeFloatToInt(c[i].z));
         }
     }
     
-
     // for debug
     _surfelRadiance[surfelIndex] = radiance;
 }
