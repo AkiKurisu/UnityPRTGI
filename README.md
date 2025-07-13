@@ -1,4 +1,4 @@
-# CasualPRT
+# Unity PRTGI
 
 Precomputed Radiance Transfer Global Illumination for Unity URP.
 
