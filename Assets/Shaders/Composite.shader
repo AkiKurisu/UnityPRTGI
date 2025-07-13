@@ -30,7 +30,13 @@ Shader "CasualPRT/Composite"
             float _coefficientVoxelGridSize;
             float4 _coefficientVoxelCorner;
             float4 _coefficientVoxelSize;
-            StructuredBuffer<int> _coefficientVoxel; 
+            
+            // Legacy ComputeBuffer support
+            StructuredBuffer<int> _coefficientVoxel;
+
+            Texture3D<int> _coefficientVoxel3D;
+            
+            SamplerState sampler_coefficientVoxel3D;
 
             float _GIIntensity;
 
@@ -44,15 +50,16 @@ Shader "CasualPRT/Composite"
                 float3 albedo = SAMPLE_TEXTURE2D(_GBuffer0, sampler_LinearClamp, i.texcoord).xyz;
                 float3 normal = SAMPLE_TEXTURE2D(_GBuffer2, sampler_LinearClamp, i.texcoord).xyz;
 
-                float3 gi = SampleSHVoxel(
-                    worldPos, 
-                    albedo, 
-                    normal,
-                    _coefficientVoxel,
-                    _coefficientVoxelGridSize,
-                    _coefficientVoxelCorner,
-                    _coefficientVoxelSize
-                );
+                float3 gi = SampleSHVoxel3D(
+                        worldPos, 
+                        albedo, 
+                        normal,
+                        _coefficientVoxel3D,
+                        _coefficientVoxelGridSize,
+                        _coefficientVoxelCorner,
+                        _coefficientVoxelSize
+                    );
+                
                 color.rgb += gi * _GIIntensity;
                 
                 return color;

@@ -39,7 +39,7 @@ float3 UniformSphereSample(float u, float v)
     return float3(x, y, z);
 }
 
-[numthreads(32,16,1)]
+[numthreads(32, 16, 1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
     float2 xy = float2(id.x, id.y) / float2(32, 16);

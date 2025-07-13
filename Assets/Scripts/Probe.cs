@@ -21,36 +21,36 @@ public enum ProbeDebugMode
 [ExecuteAlways]
 public class Probe : MonoBehaviour
 {
-    private const int tX = 32;
-    
-    private const int tY = 16;
-    
-    private const int rayNum = tX * tY;         // 512 per probe
-    
-    private const int surfelByteSize = 3 * 12 + 4;  // sizeof(Surfel)
+    private const int ThreadX = 32;
 
-    private MaterialPropertyBlock matPropBlock;
-    
+    private const int ThreadY = 16;
+
+    private const int RayNum = ThreadX * ThreadY;    // 512 per probe
+
+    private const int SurfelByteSize = 3 * 12 + 4;  // sizeof(Surfel)
+
+    private MaterialPropertyBlock _matPropBlock;
+
     public Surfel[] readBackBuffer; // CPU side surfel array, for debug
-    
+
     public ComputeBuffer surfels;   // GPU side surfel array
 
     private Vector3[] radianceDebugBuffer;
-    
-    public ComputeBuffer surfelRadiance;
-    
+
+    private ComputeBuffer _surfelRadiance;
+
     private int[] coefficientClearValue;
-    
-    public ComputeBuffer coefficientSH9; // GPU side SH9 coefficient, size: 9x3=27
+
+    private ComputeBuffer _coefficientSH9; // GPU side SH9 coefficient, size: 9x3=27
 
     public RenderTexture RT_WorldPos;
-    
+
     public RenderTexture RT_Normal;
-    
+
     public RenderTexture RT_Albedo;
 
     public ComputeShader surfelSampleCS;
-    
+
     public ComputeShader surfelReLightCS;
 
     [HideInInspector]
@@ -59,6 +59,20 @@ public class Probe : MonoBehaviour
     private ComputeBuffer tempBuffer;
 
     public ProbeDebugMode debugMode;
+    
+    private static readonly int ProbePos = Shader.PropertyToID("_probePos");
+    
+    private static readonly int RandSeed = Shader.PropertyToID("_randSeed");
+    
+    private static readonly int WorldPosCubemap = Shader.PropertyToID("_worldPosCubemap");
+    
+    private static readonly int NormalCubemap = Shader.PropertyToID("_normalCubemap");
+    
+    private static readonly int AlbedoCubemap = Shader.PropertyToID("_albedoCubemap");
+    
+    private static readonly int Surfels = Shader.PropertyToID("_surfels");
+    
+    private static readonly int CoefficientSH9 = Shader.PropertyToID("_coefficientSH9");
 
     private void Start()
     {
@@ -69,11 +83,11 @@ public class Probe : MonoBehaviour
     public void TryInit()
     {
         if (surfels == null)
-            surfels = new ComputeBuffer(rayNum, surfelByteSize);
+            surfels = new ComputeBuffer(RayNum, SurfelByteSize);
 
-        if (coefficientSH9 == null)
+        if (_coefficientSH9 == null)
         {
-            coefficientSH9 = new ComputeBuffer(27, sizeof(int));
+            _coefficientSH9 = new ComputeBuffer(27, sizeof(int));
             coefficientClearValue = new int[27];
             for (int i = 0; i < 27; i++)
             {
@@ -82,16 +96,16 @@ public class Probe : MonoBehaviour
         }
 
         if (readBackBuffer == null)
-            readBackBuffer = new Surfel[rayNum];
+            readBackBuffer = new Surfel[RayNum];
 
-        if (surfelRadiance == null)
-            surfelRadiance = new ComputeBuffer(rayNum, sizeof(float) * 3);
+        if (_surfelRadiance == null)
+            _surfelRadiance = new ComputeBuffer(RayNum, sizeof(float) * 3);
 
         if (radianceDebugBuffer == null)
-            radianceDebugBuffer = new Vector3[rayNum];
+            radianceDebugBuffer = new Vector3[RayNum];
 
-        if (matPropBlock == null)
-            matPropBlock = new MaterialPropertyBlock();
+        if (_matPropBlock == null)
+            _matPropBlock = new MaterialPropertyBlock();
 
         if (tempBuffer == null)
             tempBuffer = new ComputeBuffer(1, 4);
@@ -100,8 +114,8 @@ public class Probe : MonoBehaviour
     private void OnDestroy()
     {
         surfels?.Release();
-        coefficientSH9?.Release();
-        surfelRadiance?.Release();
+        _coefficientSH9?.Release();
+        _surfelRadiance?.Release();
         tempBuffer?.Release();
     }
 
@@ -109,24 +123,24 @@ public class Probe : MonoBehaviour
     private void OnDrawGizmos()
     {
         Vector3 probePos = gameObject.transform.position;
-        
+
         // irradiance debug sphere
         gameObject.GetComponent<MeshRenderer>().enabled = !Application.isPlaying;
         MeshRenderer meshRenderer = gameObject.GetComponent<MeshRenderer>();
         meshRenderer.sharedMaterial.shader = Shader.Find("CasualPRT/SHDebug");
-        matPropBlock.SetBuffer("_coefficientSH9", coefficientSH9);
-        meshRenderer.SetPropertyBlock(matPropBlock);
-        
+        _matPropBlock.SetBuffer(CoefficientSH9, _coefficientSH9);
+        meshRenderer.SetPropertyBlock(_matPropBlock);
 
-        if(debugMode == ProbeDebugMode.None)
+
+        if (debugMode == ProbeDebugMode.None)
             return;
-        
+
         // read back the result from CS
         surfels.GetData(readBackBuffer);
-        surfelRadiance.GetData(radianceDebugBuffer);
-        
+        _surfelRadiance.GetData(radianceDebugBuffer);
 
-        for (int i=0; i<rayNum; i++)
+
+        for (int i = 0; i < RayNum; i++)
         {
             Surfel surfel = readBackBuffer[i];
             Vector3 radiance = radianceDebugBuffer[i];
@@ -187,10 +201,10 @@ public class Probe : MonoBehaviour
 
     private void BatchSetShader(GameObject[] gameObjects, Shader shader)
     {
-        foreach(var go in gameObjects)
+        foreach (var go in gameObjects)
         {
             MeshRenderer meshRenderer = go.GetComponent<MeshRenderer>();
-            if(meshRenderer!=null)
+            if (meshRenderer != null)
             {
                 meshRenderer.sharedMaterial.shader = shader;
             }
@@ -250,12 +264,12 @@ public class Probe : MonoBehaviour
 
         // set necessary data and start sample
         Vector3 p = gameObject.transform.position;
-        surfelSampleCS.SetVector("_probePos", new Vector4(p.x, p.y, p.z, 1.0f));
-        surfelSampleCS.SetFloat("_randSeed", UnityEngine.Random.Range(0.0f, 1.0f));
-        surfelSampleCS.SetTexture(kid, "_worldPosCubemap", worldPosCubemap);
-        surfelSampleCS.SetTexture(kid, "_normalCubemap", normalCubemap);
-        surfelSampleCS.SetTexture(kid, "_albedoCubemap", albedoCubemap);
-        surfelSampleCS.SetBuffer(kid, "_surfels", surfels);
+        surfelSampleCS.SetVector(ProbePos, new Vector4(p.x, p.y, p.z, 1.0f));
+        surfelSampleCS.SetFloat(RandSeed, UnityEngine.Random.Range(0.0f, 1.0f));
+        surfelSampleCS.SetTexture(kid, WorldPosCubemap, worldPosCubemap);
+        surfelSampleCS.SetTexture(kid, NormalCubemap, normalCubemap);
+        surfelSampleCS.SetTexture(kid, AlbedoCubemap, albedoCubemap);
+        surfelSampleCS.SetBuffer(kid, Surfels, surfels);
 
         // start CS
         surfelSampleCS.Dispatch(kid, 1, 1, 1);
@@ -273,19 +287,28 @@ public class Probe : MonoBehaviour
         Vector3 p = transform.position;
         cmd.SetComputeVectorParam(surfelReLightCS, "_probePos", new Vector4(p.x, p.y, p.z, 1.0f));
         cmd.SetComputeBufferParam(surfelReLightCS, kid, "_surfels", surfels);
-        cmd.SetComputeBufferParam(surfelReLightCS, kid, "_coefficientSH9", coefficientSH9);
-        cmd.SetComputeBufferParam(surfelReLightCS, kid, "_surfelRadiance", surfelRadiance);
+        cmd.SetComputeBufferParam(surfelReLightCS, kid, "_coefficientSH9", _coefficientSH9);
+        cmd.SetComputeBufferParam(surfelReLightCS, kid, "_surfelRadiance", _surfelRadiance);
 
         // if probe has parent volume, "indexInProbeVolume" will >= 0
-        // then SH will output to "_coefficientSH9Voxel" buffer 
-        var parent = transform.parent;
-        ProbeVolume probeVolume = parent == null ? null : parent.GetComponent<ProbeVolume>();
-        ComputeBuffer coefficientVoxel = probeVolume == null ? tempBuffer : probeVolume.CoefficientVoxel;
-        cmd.SetComputeBufferParam(surfelReLightCS, kid, "_coefficientVoxel", coefficientVoxel);
+        // then SH will output to volume storage
+        ProbeVolume probeVolume = transform.parent == null ? null : transform.parent.GetComponent<ProbeVolume>();
+
+        if (probeVolume != null)
+        {
+            cmd.SetComputeTextureParam(surfelReLightCS, kid, "_coefficientVoxel3D", probeVolume.CoefficientVoxel3D);
+            cmd.SetComputeTextureParam(surfelReLightCS, kid, "_lastFrameCoefficientVoxel3D", probeVolume.LastFrameCoefficientVoxel3D);
+        }
+        else
+        {
+            // No parent volume, use temp buffer
+            cmd.SetComputeBufferParam(surfelReLightCS, kid, "_coefficientVoxel", tempBuffer);
+        }
+
         cmd.SetComputeIntParam(surfelReLightCS, "_indexInProbeVolume", indexInProbeVolume);
 
         // start CS
-        cmd.SetBufferData(coefficientSH9, coefficientClearValue);
+        cmd.SetBufferData(_coefficientSH9, coefficientClearValue);
         cmd.DispatchCompute(surfelReLightCS, kid, 1, 1, 1);
     }
 }
