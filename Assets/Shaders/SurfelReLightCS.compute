@@ -4,6 +4,7 @@
 #pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
 #pragma multi_compile _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
 
+#define RELIGHT_DEBUG 1
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
@@ -18,7 +19,6 @@ struct Surfel
 };
 
 RWStructuredBuffer<Surfel> _surfels;
-RWStructuredBuffer<int> _coefficientSH9;
 // Layout: [probeSizeX, probeSizeZ, probeSizeY * 9]
 RWTexture3D<int3> _coefficientVoxel3D;
 Texture3D<int3> _lastFrameCoefficientVoxel3D;
@@ -32,26 +32,29 @@ float4 _coefficientVoxelCorner;
 float4 _coefficientVoxelSize;
 
 // =============================== Debugging =================================== //
-RWStructuredBuffer<float3> _surfelRadiance;
+#ifdef RELIGHT_DEBUG
+    RWStructuredBuffer<int> _coefficientSH9;
+    RWStructuredBuffer<float3> _surfelRadiance;
+#endif
 // =============================== Debugging =================================== //
 
 groupshared int3 groupCoefficients[9];
 
 // Convert probe index to 3D texture coordinates
-int3 ProbeIndexToTexture3DCoord(int probeIndex, int shIndex, float4 voxelSize)
+uint3 ProbeIndexToTexture3DCoord(uint probeIndex, uint shIndex, float4 voxelSize)
 {
     // Convert 1D probe index to 3D grid coordinates
-    int probeSizeY = int(voxelSize.y);
-    int probeSizeZ = int(voxelSize.z);
+    uint probeSizeY = uint(voxelSize.y);
+    uint probeSizeZ = uint(voxelSize.z);
     
-    int x = probeIndex / (probeSizeY * probeSizeZ);
-    int temp = probeIndex % (probeSizeY * probeSizeZ);
-    int y = temp / probeSizeZ;
-    int z = temp % probeSizeZ;
+    uint x = probeIndex / (probeSizeY * probeSizeZ);
+    uint temp = probeIndex % (probeSizeY * probeSizeZ);
+    uint y = temp / probeSizeZ;
+    uint z = temp % probeSizeZ;
     
     // Convert to 3D texture coordinates
     // Layout: [probeSizeX, probeSizeZ, probeSizeY * 9]
-    int3 texCoord;
+    uint3 texCoord;
     texCoord.x = x;
     texCoord.y = z;  // Z becomes Y in texture
     texCoord.z = y * 9 + shIndex;  // Y * 9 + SH index
@@ -62,15 +65,16 @@ int3 ProbeIndexToTexture3DCoord(int probeIndex, int shIndex, float4 voxelSize)
 [numthreads(32, 16, 1)]
 void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
-    uint surfelIndex = id.x * 16 + id.y;
-    // 初始化
-    if (groupIndex == 0) {
-        for (int i = 0; i < 9; i++) {
+    if (groupIndex == 0)
+    {
+        for (int i = 0; i < 9; i++)
+        {
             groupCoefficients[i] = int3(0, 0, 0);
         }
     }
     GroupMemoryBarrierWithGroupSync();
 
+    uint surfelIndex = id.x * 16 + id.y;
     Surfel surfel = _surfels[surfelIndex];
 
     // mainlight property
@@ -132,7 +136,7 @@ void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
     }
 
     GroupMemoryBarrierWithGroupSync();
-
+    
     // storage to volume
     if (groupIndex == 0 && _indexInProbeVolume >= 0)
     {
@@ -140,13 +144,21 @@ void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
         for (int i = 0; i < 9; i++)
         {
             int3 texCoord = ProbeIndexToTexture3DCoord(_indexInProbeVolume, i, _coefficientVoxelSize);
-            _coefficientVoxel3D[texCoord] = _coefficientVoxel3D[texCoord] + groupCoefficients[i];
-            _coefficientSH9[i * 3 + 0] += groupCoefficients[i].x;
-            _coefficientSH9[i * 3 + 1] += groupCoefficients[i].y;
-            _coefficientSH9[i * 3 + 2] += groupCoefficients[i].z;
+            _coefficientVoxel3D[texCoord] += groupCoefficients[i];
         }
     }
     
-    // for debug
+#ifdef RELIGHT_DEBUG
     _surfelRadiance[surfelIndex] = radiance;
+    
+    if (groupIndex == 0)
+    {
+        for (int i = 0; i < 9; i++)
+        {
+            _coefficientSH9[i * 3 + 0] = groupCoefficients[i].x;
+            _coefficientSH9[i * 3 + 1] = groupCoefficients[i].y;
+            _coefficientSH9[i * 3 + 2] = groupCoefficients[i].z;
+        }
+    }
+#endif
 }
