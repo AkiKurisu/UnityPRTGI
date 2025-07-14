@@ -38,7 +38,7 @@ Shader "CasualPRT/Composite"
             
             SamplerState sampler_coefficientVoxel3D;
 
-            float _GIIntensity;
+            float _indirectIntensity;
 
             float4 frag (Varyings i) : SV_Target
             {
@@ -60,7 +60,7 @@ Shader "CasualPRT/Composite"
                         _coefficientVoxelSize
                     );
                 
-                color.rgb += gi * _GIIntensity;
+                color.rgb += gi * _indirectIntensity;
                 
                 return color;
             }
