@@ -31,7 +31,7 @@ Shader "CasualPRT/GbufferWorldPos"
             v2f vert (appdata v)
             {
                 v2f o;
-                o.vertex = TransformObjectToHClip(v.vertex);
+                o.vertex = TransformObjectToHClip(v.vertex.xyz);
                 o.worldPos = TransformObjectToWorld(v.vertex.xyz);
                 return o;
             }
