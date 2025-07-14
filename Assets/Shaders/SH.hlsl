@@ -95,27 +95,25 @@ float3 ProbeIndex3DToTexture3DCoord(int3 probeIndex3, int shIndex, float4 _coeff
 }
 
 // Helper function to decode SH coefficients from 3D texture for a specific probe
-void DecodeSHCoefficientFromVoxel3D(inout float3 c[9], in Texture3D<int> coefficientVoxel3D, int3 probeIndex3)
+void DecodeSHCoefficientFromVoxel3D(inout float3 c[9], in Texture3D<int3> coefficientVoxel3D, int3 probeIndex3)
 {
     // Sample RGB components separately for each SH coefficient
     for (int i = 0; i < 9; i++)
     {
-        // Calculate 3D texture coordinates for each RGB component
-        int3 texCoordR = int3(probeIndex3.x, probeIndex3.z, (probeIndex3.y * 9 + i) * 3 + 0);
-        int3 texCoordG = int3(probeIndex3.x, probeIndex3.z, (probeIndex3.y * 9 + i) * 3 + 1);
-        int3 texCoordB = int3(probeIndex3.x, probeIndex3.z, (probeIndex3.y * 9 + i) * 3 + 2);
-        
+        // Calculate 3D texture coordinates
+        int3 texCoord = int3(probeIndex3.x, probeIndex3.z, probeIndex3.y * 9 + i);
+
+        int3 fixedValue = coefficientVoxel3D.Load(int4(texCoord, 0));
         // Load and decode the fixed-point values
-        c[i].r = DecodeFloatFromInt(coefficientVoxel3D.Load(int4(texCoordR, 0)));
-        c[i].g = DecodeFloatFromInt(coefficientVoxel3D.Load(int4(texCoordG, 0)));
-        c[i].b = DecodeFloatFromInt(coefficientVoxel3D.Load(int4(texCoordB, 0)));
+        c[i].r = DecodeFloatFromInt(fixedValue.x);
+        c[i].g = DecodeFloatFromInt(fixedValue.y);
+        c[i].b = DecodeFloatFromInt(fixedValue.z);
     }
 }
 
-// Legacy functions for ComputeBuffer support
-int3 GetProbeIndex3DFromWorldPos(float3 worldPos, float4 _coefficientVoxelSize, float _coefficientVoxelGridSize, float4 _coefficientVoxelCorner)
+int3 GetProbeIndex3DFromWorldPos(float3 worldPos, float coefficientVoxelGridSize, float4 coefficientVoxelCorner)
 {
-    float3 probeIndexF = floor((worldPos.xyz - _coefficientVoxelCorner.xyz) / _coefficientVoxelGridSize);
+    float3 probeIndexF = floor((worldPos.xyz - coefficientVoxelCorner.xyz) / coefficientVoxelGridSize);
     int3 probeIndex3 = int3(probeIndexF.x, probeIndexF.y, probeIndexF.z);
     return probeIndex3;
 }
@@ -167,27 +165,36 @@ float3 TrilinearInterpolationFloat3(in float3 value[8], float3 rate)
     return g;
 }
 
-// Legacy ComputeBuffer sampling function
-float3 SampleSHVoxel1D(
+// Sample SH coefficients from 3D texture with trilinear interpolation
+float3 SampleSHVoxel3D(
     in float3 worldPos, 
     in float3 albedo, 
     in float3 normal,
-    in StructuredBuffer<int> coefficientVoxel,
+    in Texture3D<int3> coefficientVoxel3D,
     in float coefficientVoxelGridSize,
     in float4 coefficientVoxelCorner,
     in float4 coefficientVoxelSize
-    )
+)
 {
     // probe grid index for current fragment
-    int3 probeIndex3 = GetProbeIndex3DFromWorldPos(worldPos, coefficientVoxelSize, coefficientVoxelGridSize, coefficientVoxelCorner);
+    int3 probeIndex3 = GetProbeIndex3DFromWorldPos(worldPos, coefficientVoxelGridSize, coefficientVoxelCorner);
     int3 offset[8] = {
         int3(0, 0, 0), int3(0, 0, 1), int3(0, 1, 0), int3(0, 1, 1), 
         int3(1, 0, 0), int3(1, 0, 1), int3(1, 1, 0), int3(1, 1, 1), 
     };
 
     float3 c[9];
-    float3 Lo[8] = { float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), };
-    float3 BRDF = albedo / PI;
+    float3 Lo[8] = {
+        float3(0, 0, 0),
+        float3(0, 0, 0),
+        float3(0, 0, 0),
+        float3(0, 0, 0),
+        float3(0, 0, 0),
+        float3(0, 0, 0),
+        float3(0, 0, 0),
+        float3(0, 0, 0)
+    };
+    float3 brdf = albedo; // * INV_PI;
     float weight = 0.0005;
 
     // near 8 probes
@@ -207,70 +214,14 @@ float3 SampleSHVoxel1D(
         float normalWeight = saturate(dot(dir, normal));
         weight += normalWeight;
 
-        // decode SH9
-        int probeIndex = GetProbeIndex1DFromIndex3D(idx3, coefficientVoxelSize);
-        DecodeSHCoefficientFromVoxel(c, coefficientVoxel, probeIndex);
-        Lo[i] = IrradianceSH9(c, normal) * BRDF * normalWeight;
+        // decode SH9 from 3D texture
+        DecodeSHCoefficientFromVoxel3D(c, coefficientVoxel3D, idx3);
+        Lo[i] = IrradianceSH9(c, normal) * brdf * normalWeight;
     }
 
     // trilinear interpolation
     float3 minCorner = GetProbePositionFromIndex3D(probeIndex3, coefficientVoxelGridSize, coefficientVoxelCorner);
-    float3 maxCorner = minCorner + float3(1, 1, 1) * coefficientVoxelGridSize;
     float3 rate = (worldPos - minCorner) / coefficientVoxelGridSize;
-    float3 color = TrilinearInterpolationFloat3(Lo, rate) / weight;
-    
-    return color;
-}
-
-// Sample SH coefficients from 3D texture with trilinear interpolation
-float3 SampleSHVoxel3D(
-    in float3 worldPos, 
-    in float3 albedo, 
-    in float3 normal,
-    in Texture3D<int> coefficientVoxel3D,
-    in float _coefficientVoxelGridSize,
-    in float4 _coefficientVoxelCorner,
-    in float4 _coefficientVoxelSize
-)
-{
-    // probe grid index for current fragment
-    int3 probeIndex3 = GetProbeIndex3DFromWorldPos(worldPos, _coefficientVoxelSize, _coefficientVoxelGridSize, _coefficientVoxelCorner);
-    int3 offset[8] = {
-        int3(0, 0, 0), int3(0, 0, 1), int3(0, 1, 0), int3(0, 1, 1), 
-        int3(1, 0, 0), int3(1, 0, 1), int3(1, 1, 0), int3(1, 1, 1), 
-    };
-
-    float3 c[9];
-    float3 Lo[8] = { float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), };
-    float3 BRDF = albedo / PI;
-    float weight = 0.0005;
-
-    // near 8 probes
-    for (int i = 0; i < 8; i++)
-    {
-        int3 idx3 = probeIndex3 + offset[i];
-        bool isInsideVoxel = IsIndex3DInsideVoxel(idx3, _coefficientVoxelSize);
-        if (!isInsideVoxel)
-        {
-            Lo[i] = float3(0, 0, 0);
-            continue;
-        }
-
-        // normal weight blend
-        float3 probePos = GetProbePositionFromIndex3D(idx3, _coefficientVoxelGridSize, _coefficientVoxelCorner);
-        float3 dir = normalize(probePos - worldPos);
-        float normalWeight = saturate(dot(dir, normal));
-        weight += normalWeight;
-
-        // decode SH9 from 3D texture
-        DecodeSHCoefficientFromVoxel3D(c, coefficientVoxel3D, idx3);
-        Lo[i] = IrradianceSH9(c, normal) * BRDF * normalWeight;
-    }
-
-    // trilinear interpolation
-    float3 minCorner = GetProbePositionFromIndex3D(probeIndex3, _coefficientVoxelGridSize, _coefficientVoxelCorner);
-    float3 maxCorner = minCorner + float3(1, 1, 1) * _coefficientVoxelGridSize;
-    float3 rate = (worldPos - minCorner) / _coefficientVoxelGridSize;
     float3 color = TrilinearInterpolationFloat3(Lo, rate) / weight;
     
     return color;

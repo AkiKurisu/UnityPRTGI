@@ -1,0 +1,16 @@
+{
+    "name": "PRTGI.Editor",
+    "rootNamespace": "PRTGI.Editor",
+    "references": [
+        "GUID:c6390e01fd75ff041906d4191d0f54c9"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

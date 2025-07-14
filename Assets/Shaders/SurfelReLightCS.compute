@@ -19,14 +19,15 @@ struct Surfel
 
 RWStructuredBuffer<Surfel> _surfels;
 RWStructuredBuffer<int> _coefficientSH9;
-RWTexture3D<int> _coefficientVoxel3D;
-Texture3D<int> _lastFrameCoefficientVoxel3D;
+// Layout: [probeSizeX, probeSizeZ, probeSizeY * 9]
+RWTexture3D<int3> _coefficientVoxel3D;
+Texture3D<int3> _lastFrameCoefficientVoxel3D;
 
 float _skyLightIntensity;
-float4 _probePos;
 int _indexInProbeVolume;
-float _GIIntensity;
+float _indirectIntensity;
 float _coefficientVoxelGridSize;
+float4 _probePos;
 float4 _coefficientVoxelCorner;
 float4 _coefficientVoxelSize;
 
@@ -34,8 +35,10 @@ float4 _coefficientVoxelSize;
 RWStructuredBuffer<float3> _surfelRadiance;
 // =============================== Debugging =================================== //
 
+groupshared int3 groupCoefficients[9];
+
 // Convert probe index to 3D texture coordinates
-int3 ProbeIndexToTexture3DCoord(int probeIndex, int shIndex, int componentIndex, float4 voxelSize)
+int3 ProbeIndexToTexture3DCoord(int probeIndex, int shIndex, float4 voxelSize)
 {
     // Convert 1D probe index to 3D grid coordinates
     int probeSizeY = int(voxelSize.y);
@@ -47,20 +50,27 @@ int3 ProbeIndexToTexture3DCoord(int probeIndex, int shIndex, int componentIndex,
     int z = temp % probeSizeZ;
     
     // Convert to 3D texture coordinates
-    // Layout: [probeSizeX, probeSizeZ, probeSizeY * 9 * 3]
-    // componentIndex: 0=R, 1=G, 2=B
+    // Layout: [probeSizeX, probeSizeZ, probeSizeY * 9]
     int3 texCoord;
     texCoord.x = x;
     texCoord.y = z;  // Z becomes Y in texture
-    texCoord.z = (y * 9 + shIndex) * 3 + componentIndex;  // (Y * 9 + SH index) * 3 + component
+    texCoord.z = y * 9 + shIndex;  // Y * 9 + SH index
     
     return texCoord;
 }
 
-[numthreads(32,16,1)]
-void CSMain (uint3 id : SV_DispatchThreadID)
+[numthreads(32, 16, 1)]
+void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
     uint surfelIndex = id.x * 16 + id.y;
+    // 初始化
+    if (groupIndex == 0) {
+        for (int i = 0; i < 9; i++) {
+            groupCoefficients[i] = int3(0, 0, 0);
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+
     Surfel surfel = _surfels[surfelIndex];
 
     // mainlight property
@@ -98,7 +108,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         _coefficientVoxelCorner,
         _coefficientVoxelSize
     );
-    radiance += history * _GIIntensity;
+    radiance += history * _indirectIntensity;
 
     // SH projection
     const float N = 32 * 16;
@@ -113,29 +123,27 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     c[7] = SH(2, 1, dir) * radiance * 4.0 * PI / N;
     c[8] = SH(2, 2, dir) * radiance * 4.0 * PI / N;
 
-    // atom write result to buffer
-    for (int i = 0; i < 9; i++)
+    for (int i = 0; i < 9; i++) 
     {
-        InterlockedAdd(_coefficientSH9[i * 3 + 0], EncodeFloatToInt(c[i].x));
-        InterlockedAdd(_coefficientSH9[i * 3 + 1], EncodeFloatToInt(c[i].y));
-        InterlockedAdd(_coefficientSH9[i * 3 + 2], EncodeFloatToInt(c[i].z));
+        int3 encoded = int3(EncodeFloatToInt(c[i].x), EncodeFloatToInt(c[i].y), EncodeFloatToInt(c[i].z));
+        InterlockedAdd(groupCoefficients[i].x, encoded.x);
+        InterlockedAdd(groupCoefficients[i].y, encoded.y);
+        InterlockedAdd(groupCoefficients[i].z, encoded.z);
     }
 
-    /**/
+    GroupMemoryBarrierWithGroupSync();
+
     // storage to volume
-    if (_indexInProbeVolume >= 0)
+    if (groupIndex == 0 && _indexInProbeVolume >= 0)
     {
         // Write to 3D texture using reduced coefficients
-        // Write each RGB component separately
         for (int i = 0; i < 9; i++)
         {
-            int3 texCoordR = ProbeIndexToTexture3DCoord(_indexInProbeVolume, i, 0, _coefficientVoxelSize);
-            int3 texCoordG = ProbeIndexToTexture3DCoord(_indexInProbeVolume, i, 1, _coefficientVoxelSize);
-            int3 texCoordB = ProbeIndexToTexture3DCoord(_indexInProbeVolume, i, 2, _coefficientVoxelSize);
-                
-            InterlockedAdd(_coefficientVoxel3D[texCoordR], EncodeFloatToInt(c[i].x));
-            InterlockedAdd(_coefficientVoxel3D[texCoordG], EncodeFloatToInt(c[i].y));
-            InterlockedAdd(_coefficientVoxel3D[texCoordB], EncodeFloatToInt(c[i].z));
+            int3 texCoord = ProbeIndexToTexture3DCoord(_indexInProbeVolume, i, _coefficientVoxelSize);
+            _coefficientVoxel3D[texCoord] = _coefficientVoxel3D[texCoord] + groupCoefficients[i];
+            _coefficientSH9[i * 3 + 0] += groupCoefficients[i].x;
+            _coefficientSH9[i * 3 + 1] += groupCoefficients[i].y;
+            _coefficientSH9[i * 3 + 2] += groupCoefficients[i].z;
         }
     }
     

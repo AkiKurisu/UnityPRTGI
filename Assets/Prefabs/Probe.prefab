@@ -26,13 +26,13 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8812335778316382696}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -2.0361876, y: 0.5, z: -0.48027706}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!33 &1946854072332580276
 MeshFilter:
@@ -59,7 +59,7 @@ MeshRenderer:
   m_ReflectionProbeUsage: 1
   m_RayTracingMode: 2
   m_RayTraceProcedural: 0
-  m_RenderingLayerMask: 1
+  m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 5eac38647669ec64f913e3dca9be2f27, type: 2}
@@ -96,10 +96,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9f24edd553d138b479b1e02fd8ff3b40, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  RT_WorldPos: {fileID: 8400000, guid: 42e5180619f34cd41a3d6e6bb8d04252, type: 2}
-  RT_Normal: {fileID: 8400000, guid: 66aefd847a2fa6742897d79e7ccbb5b6, type: 2}
-  RT_Albedo: {fileID: 8400000, guid: 8f052c6cc472caa478fc699102aa7392, type: 2}
+  sphereSize: 0.025
+  defaultColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  skyColor: {r: 0, g: 0, b: 1, a: 1}
+  normalColor: {r: 0, g: 1, b: 0, a: 1}
   surfelSampleCS: {fileID: 7200000, guid: 6d00355db14e92f4db4cee326f26738d, type: 3}
   surfelReLightCS: {fileID: 7200000, guid: 7e3dc2a9e5db3574a9e55bfa0323fdb3, type: 3}
-  indexInProbeVolume: -1
-  debugMode: 0
