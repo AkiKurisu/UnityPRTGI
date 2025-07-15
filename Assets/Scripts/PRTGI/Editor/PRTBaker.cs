@@ -32,7 +32,7 @@ namespace PRTGI.Editor
         private readonly ProbeVolume _volume;
 
         // Dictionary to store original shaders for restoration
-        private readonly Dictionary<Material, Shader> _originalShaders = new Dictionary<Material, Shader>();
+        private readonly Dictionary<Material, Shader> _originalShaders = new();
 
         /// <summary>
         /// Initialize the PRTBaker with the specified cubemap size

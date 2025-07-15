@@ -181,28 +181,17 @@ namespace PRTGI
         {
             int probeNum = probeSizeX * probeSizeY * probeSizeZ;
             int surfelPerProbe = 512;
-            int floatPerSurfel = 10;
-            Array.Resize(ref volumeData.surfelStorageBuffer, probeNum * surfelPerProbe * floatPerSurfel);
-
+            using var surfelStorageBuffer = new NativeArray<Surfel>(probeNum * surfelPerProbe, Allocator.Temp);
+            
             int destinationIndex = 0;
-            for (int i = 0; i < Probes.Length; i++)
+            foreach (var probe in Probes)
             {
-                Probe probe = Probes[i];
-                if (probe.readBackBuffer != null && probe.readBackBuffer.Length > 0)
-                {
-                    // Create NativeArray from the surfel array
-                    using var surfelNativeArray = new NativeArray<Surfel>(probe.readBackBuffer, Allocator.Temp);
-
-                    // Reinterpret as float array
-                    var floatNativeArray = surfelNativeArray.Reinterpret<float>(UnsafeUtility.SizeOf<Surfel>());
-
-                    // Copy to destination buffer
-                    NativeArray<float>.Copy(floatNativeArray, 0, volumeData.surfelStorageBuffer, destinationIndex, floatNativeArray.Length);
-
-                    destinationIndex += floatNativeArray.Length;
-                }
+                // Copy to destination buffer
+                NativeArray<Surfel>.Copy(probe.readBackBuffer, 0, surfelStorageBuffer, destinationIndex, probe.readBackBuffer.Length);
+                destinationIndex += probe.readBackBuffer.Length;
             }
 
+            volumeData.surfelStorageBuffer = surfelStorageBuffer.Reinterpret<float>(UnsafeUtility.SizeOf<Surfel>()).ToArray();
             volumeData.volumePosition = transform.position;
         }
 
@@ -225,27 +214,17 @@ namespace PRTGI
                 return;
             }
 
+            // Create NativeArray from the surfel buffer
+            using var surfelFloatStorageArray = new NativeArray<float>(surfelData.surfelStorageBuffer, Allocator.Temp);
+            var surfelStorageArray = surfelFloatStorageArray.Reinterpret<Surfel>(UnsafeUtility.SizeOf<float>());
+            
             int sourceIndex = 0;
             foreach (var probe in Probes)
             {
-                if (probe.readBackBuffer != null && probe.readBackBuffer.Length > 0)
-                {
-                    int surfelDataLength = probe.readBackBuffer.Length * floatPerSurfel;
-
-                    // Create NativeArray from the surfel array
-                    using var surfelNativeArray = new NativeArray<Surfel>(probe.readBackBuffer.Length, Allocator.Temp);
-
-                    // Reinterpret as float array
-                    var floatNativeArray = surfelNativeArray.Reinterpret<float>(UnsafeUtility.SizeOf<Surfel>());
-
-                    // Copy from source buffer to surfel data
-                    NativeArray<float>.Copy(surfelStorageBuffer, sourceIndex, floatNativeArray, 0, surfelDataLength);
-
-                    probe.readBackBuffer = surfelNativeArray.ToArray();
-                    sourceIndex += surfelDataLength;
-                }
-
+                // Copy from source buffer to surfel data
+                NativeArray<Surfel>.Copy(surfelStorageArray, sourceIndex, probe.readBackBuffer, 0, probe.readBackBuffer.Length);
                 probe.surfels.SetData(probe.readBackBuffer);
+                sourceIndex += probe.readBackBuffer.Length;
             }
 
             _isDataInitialized = true;
