@@ -7,8 +7,10 @@ namespace PRTGI
     [CreateAssetMenu(fileName = "ProbeVolumeData", menuName = "ProbeVolumeData")]
     public class ProbeVolumeData : ScriptableObject
     {
+        [HideInInspector]
         public Vector3 volumePosition;
 
+        [HideInInspector]
         public float[] surfelStorageBuffer;
 
         public void Clear()
