@@ -60,6 +60,9 @@ namespace PRTGI
                     probe.ReLight(cmd);
                 }
             }
+
+            // Advance volume render frame
+            volume.AdvanceRenderFrame();
         }
     }
 }

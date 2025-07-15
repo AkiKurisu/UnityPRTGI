@@ -117,6 +117,8 @@ namespace PRTGI
 
         private bool _isDataInitialized;
 
+        private uint _frameCount;
+
         private void Start()
         {
 #if UNITY_EDITOR
@@ -288,6 +290,9 @@ namespace PRTGI
 
             _historyBuffer.Initialize(probeSizeX, probeSizeZ, 0, Texture3DFormat, TextureDimension.Tex3D, volumeDepth);
 
+            // Reset frame count when historyBuffer are re-allocated
+            _frameCount = 0;
+
             // Reset probe update rotation when new probes are generated
             ResetProbeUpdateRotation();
         }
@@ -341,8 +346,8 @@ namespace PRTGI
 
         public void ClearCoefficientVoxel(CommandBuffer cmd)
         {
-            if (multiFrameRelight) return;
-            
+            if (multiFrameRelight && _frameCount >= 2) return;
+
             // Clear 3D texture
             _historyBuffer.ClearWriteBuffer(cmd, Color.black);
         }
@@ -369,7 +374,7 @@ namespace PRTGI
             if (Probes == null || Probes.Length == 0)
                 return;
 
-            if (!multiFrameRelight)
+            if (!multiFrameRelight || _frameCount < 2)
             {
                 probes.AddRange(Probes);
                 return;
@@ -384,7 +389,12 @@ namespace PRTGI
                 int probeIndex = (_currentProbeUpdateIndex + i) % Probes.Length;
                 probes.Add(Probes[probeIndex]);
             }
+        }
 
+        public void AdvanceRenderFrame()
+        {
+            ++_frameCount;
+            int probesToUpdateCount = GetValidProbesPerFrameUpdate();
             // Advance the update index for next frame
             _currentProbeUpdateIndex = (_currentProbeUpdateIndex + probesToUpdateCount) % Probes.Length;
         }
