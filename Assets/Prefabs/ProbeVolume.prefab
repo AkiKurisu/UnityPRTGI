@@ -52,6 +52,8 @@ MonoBehaviour:
   data: {fileID: 11400000, guid: 33f1928f6479bc34787575bb1184cece, type: 2}
   skyLightIntensity: 2
   indirectIntensity: 3
+  multiFrameRelight: 1
+  probesPerFrameUpdate: 27
   debugMode: 0
   selectedProbeIndex: 96
   selectedProbeDebugMode: 0
