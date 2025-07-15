@@ -10,15 +10,15 @@ namespace PRTGI
         /// </summary>
         private void UpdateMeshRendererVisibility()
         {
-            if (!Renderer)
+            if (!_renderer)
                 return;
 
             // Show irradiance sphere only when IrradianceSphere debug mode is enabled
-            bool shouldShowIrradianceSphere = Volume.debugMode == ProbeVolumeDebugMode.ProbeRadiance;
-            bool isSelected = Volume.selectedProbeIndex == indexInProbeVolume && indexInProbeVolume != -1;
+            bool shouldShowIrradianceSphere = _volume.debugMode == ProbeVolumeDebugMode.ProbeRadiance;
+            bool isSelected = _volume.selectedProbeIndex == indexInProbeVolume && indexInProbeVolume != -1;
             // Hide when is selected and using other debug modes
-            shouldShowIrradianceSphere &= !isSelected || Volume.selectedProbeDebugMode == ProbeDebugMode.IrradianceSphere;
-            Renderer.enabled = shouldShowIrradianceSphere;
+            shouldShowIrradianceSphere &= !isSelected || _volume.selectedProbeDebugMode == ProbeDebugMode.IrradianceSphere;
+            _renderer.enabled = shouldShowIrradianceSphere;
 
             // Update material properties if sphere is visible
             if (shouldShowIrradianceSphere)
@@ -32,15 +32,15 @@ namespace PRTGI
         /// </summary>
         private void UpdateIrradianceSphereShader()
         {
-            if (!Renderer || !Renderer.sharedMaterial)
+            if (!_renderer || !_renderer.sharedMaterial)
                 return;
 
-            Renderer.sharedMaterial.shader = Shader.Find("CasualPRT/SHDebug");
+            _renderer.sharedMaterial.shader = Shader.Find("CasualPRT/SHDebug");
 
             if (_coefficientSH9 != null)
             {
                 _matPropBlock.SetBuffer(CoefficientSH9, _coefficientSH9);
-                Renderer.SetPropertyBlock(_matPropBlock);
+                _renderer.SetPropertyBlock(_matPropBlock);
             }
         }
 

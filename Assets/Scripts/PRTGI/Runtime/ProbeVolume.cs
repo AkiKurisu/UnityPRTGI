@@ -24,7 +24,7 @@ namespace PRTGI
 
             public readonly int Y;
 
-            public readonly int Z ;
+            public readonly int Z;
 
             public readonly float Size;
 
@@ -35,7 +35,7 @@ namespace PRTGI
                 Z = z;
                 Size = size;
             }
-            
+
             public bool Equals(Grid other)
             {
                 return X == other.X && Y == other.Y && Z == other.Z && Size.Equals(other.Size);
@@ -46,8 +46,8 @@ namespace PRTGI
                 return HashCode.Combine(X, Y, Z, Size);
             }
         }
-        
-        private readonly RenderTextureTripleBuffer _tripleBuffer = new();
+
+        private readonly RenderTextureHistoryBuffer _historyBuffer = new();
 
         public Probe probePrefab;
 
@@ -67,18 +67,18 @@ namespace PRTGI
         /// 3D Texture to write SH coefficients
         /// Layout: [probeSizeX, probeSizeZ, probeSizeY * 9]
         /// </summary>
-        public RenderTexture WriteCoefficientVoxel3D => _tripleBuffer.WriteFrame;
+        public RenderTexture WriteCoefficientVoxel3D => _historyBuffer.WriteFrame;
 
         /// <summary>
         /// 3D Texture to store SH coefficients
         /// Layout: [probeSizeX, probeSizeZ, probeSizeY * 9]
         /// </summary>
-        public RenderTexture CurrentFrameCoefficientVoxel3D => multiFrameRelight ? _tripleBuffer.CurrentFrame : _tripleBuffer.WriteFrame;
+        public RenderTexture CurrentFrameCoefficientVoxel3D => _historyBuffer.WriteFrame;
 
         /// <summary>
         /// Last frame 3D texture for infinite bounce
         /// </summary>
-        public RenderTexture LastFrameCoefficientVoxel3D => multiFrameRelight ? _tripleBuffer.HistoryFrame : _tripleBuffer.CurrentFrame;
+        public RenderTexture LastFrameCoefficientVoxel3D => _historyBuffer.CurrentFrame;
 
         [Range(0.0f, 10.0f)]
         public float skyLightIntensity = 1.0f;
@@ -151,7 +151,7 @@ namespace PRTGI
             if (!gameObject.scene.IsValid()) return;
 #endif
             ReleaseProbes();
-            _tripleBuffer.Release();
+            _historyBuffer.Release();
         }
 
         /// <summary>
@@ -161,7 +161,7 @@ namespace PRTGI
         private bool IsProbeValid()
         {
             if (Probes == null || !Probes.Any()) return false;
-            return _tripleBuffer?.IsInitialized ?? false;
+            return _historyBuffer?.IsInitialized ?? false;
         }
 
         /// <summary>
@@ -182,7 +182,7 @@ namespace PRTGI
             int probeNum = probeSizeX * probeSizeY * probeSizeZ;
             int surfelPerProbe = 512;
             using var surfelStorageBuffer = new NativeArray<Surfel>(probeNum * surfelPerProbe, Allocator.Temp);
-            
+
             int destinationIndex = 0;
             foreach (var probe in Probes)
             {
@@ -217,7 +217,7 @@ namespace PRTGI
             // Create NativeArray from the surfel buffer
             using var surfelFloatStorageArray = new NativeArray<float>(surfelData.surfelStorageBuffer, Allocator.Temp);
             var surfelStorageArray = surfelFloatStorageArray.Reinterpret<Surfel>(UnsafeUtility.SizeOf<float>());
-            
+
             int sourceIndex = 0;
             foreach (var probe in Probes)
             {
@@ -255,7 +255,7 @@ namespace PRTGI
 
             _grid = new Grid(probeSizeX, probeSizeY, probeSizeZ, probeGridSize);
 
-            _tripleBuffer.Release();
+            _historyBuffer.Release();
 
             int probeNum = probeSizeX * probeSizeY * probeSizeZ;
 
@@ -276,7 +276,7 @@ namespace PRTGI
                         Probes[index].gameObject.hideFlags = HideFlags.HideAndDontSave;
                         Probes[index].transform.position = relativePos + parentPos;
                         Probes[index].indexInProbeVolume = index;
-                        Probes[index].TryInit();
+                        Probes[index].ReAllocateIfNeeded();
                     }
                 }
             }
@@ -286,7 +286,7 @@ namespace PRTGI
             // Each depth slice corresponds to one RGB component of SH coefficient
             int volumeDepth = probeSizeY * 9; // 9 SH coefficients per probe
 
-            _tripleBuffer.Initialize(probeSizeX, probeSizeZ, 0, Texture3DFormat, TextureDimension.Tex3D, volumeDepth);
+            _historyBuffer.Initialize(probeSizeX, probeSizeZ, 0, Texture3DFormat, TextureDimension.Tex3D, volumeDepth);
 
             // Reset probe update rotation when new probes are generated
             ResetProbeUpdateRotation();
@@ -341,9 +341,10 @@ namespace PRTGI
 
         public void ClearCoefficientVoxel(CommandBuffer cmd)
         {
-            if (multiFrameRelight && _currentProbeUpdateIndex != 0) return;
+            if (multiFrameRelight) return;
+            
             // Clear 3D texture
-            _tripleBuffer.ClearWriteBuffer(cmd, Color.black);
+            _historyBuffer.ClearWriteBuffer(cmd, Color.black);
         }
 
         /// <summary>
@@ -351,16 +352,7 @@ namespace PRTGI
         /// </summary>
         public void SwapCoefficientVoxels()
         {
-            if (multiFrameRelight && _currentProbeUpdateIndex != 0) return;
-            // Swap 3D textures
-            if (multiFrameRelight)
-            {
-                _tripleBuffer.SwapTripleBuffers();
-            }
-            else
-            {
-                _tripleBuffer.SwapDoubleBuffers();
-            }
+            _historyBuffer.SwapBuffers();
         }
 
         public Vector3 GetVoxelMinCorner()

@@ -30,7 +30,7 @@ namespace PRTGI
         {
             ProbeVolume volume = UObject.FindFirstObjectByType<ProbeVolume>();
             if (volume == null || !volume.IsActivate()) return;
-            
+
 #if UNITY_EDITOR
             if (volume.debugMode == ProbeVolumeDebugMode.ProbeRadiance) return;
 #endif
@@ -57,7 +57,6 @@ namespace PRTGI
                 volume.GetProbesToUpdate(probesToUpdate);
                 foreach (var probe in probesToUpdate)
                 {
-                    probe.TryInit();
                     probe.ReLight(cmd);
                 }
             }

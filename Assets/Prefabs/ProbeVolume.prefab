@@ -53,7 +53,7 @@ MonoBehaviour:
   skyLightIntensity: 2
   indirectIntensity: 3
   multiFrameRelight: 1
-  probesPerFrameUpdate: 27
+  probesPerFrameUpdate: 15
   debugMode: 0
   selectedProbeIndex: 96
   selectedProbeDebugMode: 0

@@ -144,7 +144,7 @@ void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
         for (int i = 0; i < 9; i++)
         {
             int3 texCoord = ProbeIndexToTexture3DCoord(_indexInProbeVolume, i, _coefficientVoxelSize);
-            _coefficientVoxel3D[texCoord] += groupCoefficients[i];
+            _coefficientVoxel3D[texCoord] = groupCoefficients[i];
         }
     }
     

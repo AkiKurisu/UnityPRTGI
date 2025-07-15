@@ -6,23 +6,15 @@ namespace PRTGI
     public partial class ProbeVolume
     {
         /// <summary>
-        /// Utility class for managing triple buffering of RenderTextures
-        /// Manages three RenderTextures for history frame sampling, write operations, and current frame sampling
+        /// Utility class for managing buffering of RenderTextures
         /// </summary>
-        private class RenderTextureTripleBuffer
+        private class RenderTextureHistoryBuffer
         {
             private RenderTexture[] _buffers;
 
-            private int _historyIndex;
+            private int _writeIndex;
 
-            private int _writeIndex = 1;
-
-            private int _currentIndex = 2;
-
-            /// <summary>
-            /// RenderTexture for history frame sampling
-            /// </summary>
-            public RenderTexture HistoryFrame => _buffers[_historyIndex];
+            private int _currentIndex = 1;
 
             /// <summary>
             /// RenderTexture for write operations
@@ -35,13 +27,13 @@ namespace PRTGI
             public RenderTexture CurrentFrame => _buffers[_currentIndex];
 
             /// <summary>
-            /// Check if the triple buffer is initialized
+            /// Check if the buffer is initialized
             /// </summary>
             public bool IsInitialized =>
-                _buffers != null && _buffers[0] != null && _buffers[1] != null && _buffers[2] != null;
+                _buffers != null && _buffers[0] != null && _buffers[1] != null;
 
             /// <summary>
-            /// Initialize the triple buffer with given RenderTexture settings
+            /// Initialize the buffer with given RenderTexture settings
             /// </summary>
             /// <param name="width">Width of the RenderTexture</param>
             /// <param name="height">Height of the RenderTexture</param>
@@ -54,9 +46,9 @@ namespace PRTGI
             {
                 Release();
 
-                _buffers = new RenderTexture[3];
+                _buffers = new RenderTexture[2];
 
-                for (int i = 0; i < 3; i++)
+                for (int i = 0; i < 2; i++)
                 {
                     _buffers[i] = new RenderTexture(width, height, depth, format)
                     {
@@ -78,37 +70,14 @@ namespace PRTGI
             }
 
             /// <summary>
-            /// Swap the RenderTextures according to the triple buffer pattern
-            /// First: Current frame RT and history frame RT swap
-            /// Second: History frame RT and write frame RT swap
+            /// Swap the RenderTextures
+            /// Current frame RT and write frame RT swap
             /// </summary>
-            public void SwapTripleBuffers()
+            public void SwapBuffers()
             {
                 if (!IsInitialized)
                 {
-                    Debug.LogWarning("Triple buffer not initialized, cannot swap buffers");
-                    return;
-                }
-
-                // Perform the two swaps as described:
-                // 1. Current frame RT and history frame RT swap
-                // 2. History frame RT and write frame RT swap
-
-                // This effectively rotates the indices: current -> history -> write -> current
-                int tempIndex = _currentIndex;
-                _currentIndex = _historyIndex;
-                _historyIndex = _writeIndex;
-                _writeIndex = tempIndex;
-            }
-
-            /// <summary>
-            /// Swap only write and current buffers, ignore history frame RT
-            /// </summary>
-            public void SwapDoubleBuffers()
-            {
-                if (!IsInitialized)
-                {
-                    Debug.LogWarning("Triple buffer not initialized, cannot swap buffers");
+                    Debug.LogWarning("Buffer not initialized, cannot swap buffers");
                     return;
                 }
 
@@ -158,7 +127,7 @@ namespace PRTGI
             /// <returns>String representation of current buffer indices</returns>
             public string GetBufferInfo()
             {
-                return $"History: {_historyIndex}, Write: {_writeIndex}, Current: {_currentIndex}";
+                return $"Write: {_writeIndex}, Current: {_currentIndex}";
             }
         }
     }
