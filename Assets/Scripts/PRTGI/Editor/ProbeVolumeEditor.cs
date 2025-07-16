@@ -13,11 +13,17 @@ namespace PRTGI.Editor
 
         private bool _showBakeSettings;
 
-        private Vector2 _probeListScrollPos;
-
         private void OnEnable()
         {
             _probeVolume = (ProbeVolume)target;
+            _showProbeSelection = EditorPrefs.GetBool("PRTGI_ProbeVolumeEditor_ShowProbeSettings", false);
+            _showBakeSettings = EditorPrefs.GetBool("PRTGI_ProbeVolumeEditor_ShowBakeSettings", false);
+        }
+
+        private void OnDisable()
+        {
+            EditorPrefs.SetBool("PRTGI_ProbeVolumeEditor_ShowProbeSettings", _showProbeSelection);
+            EditorPrefs.SetBool("PRTGI_ProbeVolumeEditor_ShowBakeSettings", _showBakeSettings);
         }
 
         public override void OnInspectorGUI()
@@ -100,8 +106,6 @@ namespace PRTGI.Editor
         private void DrawActionButtons()
         {
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Actions", EditorStyles.boldLabel);
-
             EditorGUILayout.BeginHorizontal();
 
             if (GUILayout.Button("Clear Data"))
@@ -136,8 +140,7 @@ namespace PRTGI.Editor
 
             try
             {
-                _probeVolume.BakeData(prtBaker);
-                prtBaker.Complete();
+                prtBaker.BakeVolume(_probeVolume);
                 EditorUtility.SetDirty(_probeVolume.data);
                 AssetDatabase.SaveAssets();
             }

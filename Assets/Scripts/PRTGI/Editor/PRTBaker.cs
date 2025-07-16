@@ -211,9 +211,10 @@ namespace PRTGI.Editor
         {
             return _isInitialized && !_disposed;
         }
-
-        public void Complete()
+        
+        public void BakeVolume(ProbeVolume volume)
         {
+            volume.BakeData(this);
             _volume.StorageSurfelData(_volume.data);
         }
 
