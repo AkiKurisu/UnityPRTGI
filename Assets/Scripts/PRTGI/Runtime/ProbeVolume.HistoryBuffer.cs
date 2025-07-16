@@ -93,7 +93,7 @@ namespace PRTGI
             {
                 if (!IsInitialized)
                 {
-                    Debug.LogWarning("Triple buffer not initialized, cannot clear write buffer");
+                    Debug.LogWarning("Buffer not initialized, cannot clear write buffer");
                     return;
                 }
 
