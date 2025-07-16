@@ -41,15 +41,16 @@ namespace PRTGI
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
+            ProbeVolume volume = UObject.FindFirstObjectByType<ProbeVolume>();
+            if (volume == null || !volume.IsActivate()) return;
+#if UNITY_EDITOR
+            if (volume.debugMode == ProbeVolumeDebugMode.ProbeRadiance) return;
+#endif
             CommandBuffer cmd = CommandBufferPool.Get();
             using (new ProfilingScope(cmd, profilingSampler))
             {
-                ProbeVolume volume = UObject.FindFirstObjectByType<ProbeVolume>();
-                if (volume != null && volume.IsActivate())
-                {
-                    Blitter.BlitCameraTexture(cmd, _blitSrc, _tempRTHandle, _blitMaterial, 0);
-                    Blitter.BlitCameraTexture(cmd, _tempRTHandle, _blitSrc);
-                }
+                Blitter.BlitCameraTexture(cmd, _blitSrc, _tempRTHandle, _blitMaterial, 0);
+                Blitter.BlitCameraTexture(cmd, _tempRTHandle, _blitSrc);
             }
 
             context.ExecuteCommandBuffer(cmd);
