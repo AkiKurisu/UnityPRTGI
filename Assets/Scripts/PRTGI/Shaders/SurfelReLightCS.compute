@@ -38,7 +38,9 @@ float4 _coefficientVoxelSize;
 #endif
 // =============================== Debugging =================================== //
 
-groupshared float3 groupCoefficients[512];
+static const float N = 32 * 16;
+
+groupshared float3 groupCoefficients[N];
 
 // Convert probe index to 3D texture coordinates
 uint3 ProbeIndexToTexture3DCoord(uint probeIndex, uint shIndex, float4 voxelSize)
@@ -127,8 +129,6 @@ void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
     float3 dir = normalize(surfel.position - _probePos.xyz);
     
     float3 radiance = EvaluateSurfelRadiance(surfel, mainLight, dir);
-
-    const float N = 32 * 16;
     
     for (int index = 0; index < 9; index++)
     {

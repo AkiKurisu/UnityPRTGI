@@ -5,12 +5,24 @@ namespace PRTGI
 {
     public partial class Probe
     {
+        // Debug visualization settings
+        [Header("Debug Settings")]
+        [Range(0.01f, 0.1f)] 
+        public float sphereSize = 0.025f;
+        
+        // Debug colors
+        public Color defaultColor = Color.yellow;
+        
+        public Color skyColor = Color.blue;
+        
+        public Color normalColor = Color.green;
+        
         /// <summary>
         /// Update MeshRenderer visibility based on debug mode
         /// </summary>
         private void UpdateMeshRendererVisibility()
         {
-            if (!_renderer)
+            if (!Renderer)
                 return;
 
             // Show irradiance sphere only when IrradianceSphere debug mode is enabled
@@ -18,7 +30,7 @@ namespace PRTGI
             bool isSelected = _volume.selectedProbeIndex == indexInProbeVolume && indexInProbeVolume != -1;
             // Hide when is selected and using other debug modes
             shouldShowIrradianceSphere &= !isSelected || _volume.selectedProbeDebugMode == ProbeDebugMode.IrradianceSphere;
-            _renderer.enabled = shouldShowIrradianceSphere;
+            Renderer.enabled = shouldShowIrradianceSphere;
 
             // Update material properties if sphere is visible
             if (shouldShowIrradianceSphere)
@@ -32,15 +44,13 @@ namespace PRTGI
         /// </summary>
         private void UpdateIrradianceSphereShader()
         {
-            if (!_renderer || !_renderer.sharedMaterial)
+            if (!Renderer)
                 return;
-
-            _renderer.sharedMaterial.shader = Shader.Find("CasualPRT/SHDebug");
-
+            
             if (_coefficientSH9 != null)
             {
-                _matPropBlock.SetBuffer(CoefficientSH9, _coefficientSH9);
-                _renderer.SetPropertyBlock(_matPropBlock);
+                _matPropBlock.SetBuffer(ShaderProperties.CoefficientSH9, _coefficientSH9);
+                Renderer.SetPropertyBlock(_matPropBlock);
             }
         }
 
@@ -49,13 +59,13 @@ namespace PRTGI
         /// </summary>
         /// <param name="debugMode">Debug mode for visualization</param>
         /// <param name="probePos">Position of the probe</param>
-        public void DrawDebugVisualization(ProbeDebugMode debugMode, Vector3 probePos)
+        internal void DrawDebugVisualization(ProbeDebugMode debugMode, Vector3 probePos)
         {
             if (!ValidateDebugBuffers())
                 return;
 
             // Read back data from GPU
-            surfels.GetData(readBackBuffer);
+            _surfels.GetData(ReadBackBuffer);
             _surfelRadiance.GetData(_radianceDebugBuffer);
 
             // Draw based on debug mode
@@ -82,13 +92,13 @@ namespace PRTGI
         /// <returns>True if buffers are valid</returns>
         private bool ValidateDebugBuffers()
         {
-            if (surfels == null || _surfelRadiance == null)
+            if (_surfels == null || _surfelRadiance == null)
             {
                 Debug.LogWarning($"Debug buffers not initialized for probe {name}");
                 return false;
             }
 
-            if (readBackBuffer == null || _radianceDebugBuffer == null)
+            if (ReadBackBuffer == null || _radianceDebugBuffer == null)
             {
                 Debug.LogWarning($"Debug readback buffers not initialized for probe {name}");
                 return false;
@@ -105,8 +115,8 @@ namespace PRTGI
         {
             for (int i = 0; i < RayNum; i++)
             {
-                Vector3 dir = GetSurfelDirection(readBackBuffer[i], probePos);
-                bool isSky = IsSky(readBackBuffer[i]);
+                Vector3 dir = GetSurfelDirection(ReadBackBuffer[i], probePos);
+                bool isSky = IsSky(ReadBackBuffer[i]);
 
                 Gizmos.color = isSky ? skyColor : defaultColor;
                 Gizmos.DrawSphere(dir + probePos, sphereSize);
@@ -121,7 +131,7 @@ namespace PRTGI
         {
             for (int i = 0; i < RayNum; i++)
             {
-                Surfel surfel = readBackBuffer[i];
+                Surfel surfel = ReadBackBuffer[i];
                 Vector3 dir = GetSurfelDirection(surfel, probePos);
                 bool isSky = IsSky(surfel);
 
@@ -149,7 +159,7 @@ namespace PRTGI
 
             for (int i = 0; i < RayNum; i++)
             {
-                Surfel surfel = readBackBuffer[i];
+                Surfel surfel = ReadBackBuffer[i];
                 if (IsSky(surfel))
                     continue;
 
@@ -171,7 +181,7 @@ namespace PRTGI
         {
             for (int i = 0; i < RayNum; i++)
             {
-                Surfel surfel = readBackBuffer[i];
+                Surfel surfel = ReadBackBuffer[i];
                 if (IsSky(surfel))
                     continue;
 

@@ -39,25 +39,11 @@ namespace PRTGI
 
         private const float SkyMaskThreshold = 0.995f;
 
-#if UNITY_EDITOR
-        // Debug visualization settings
-        [Header("Debug Settings")]
-        [Range(0.01f, 0.1f)] 
-        public float sphereSize = 0.025f;
-        
-        // Debug colors
-        public Color defaultColor = Color.yellow;
-        
-        public Color skyColor = Color.blue;
-        
-        public Color normalColor = Color.green;
-#endif
-
         private MaterialPropertyBlock _matPropBlock;
 
-        public Surfel[] readBackBuffer; // CPU side surfel array, for debug
+        public Surfel[] ReadBackBuffer { get; set; } // CPU side surfel array, for debug
 
-        public ComputeBuffer surfels; // GPU side surfel array
+        private ComputeBuffer _surfels; // GPU side surfel array
 
         private Vector3[] _radianceDebugBuffer;
 
@@ -67,28 +53,18 @@ namespace PRTGI
 
         private ComputeBuffer _coefficientSH9; // GPU side SH9 coefficient, size: 9x3=27
 
-        public ComputeShader surfelSampleCS;
+        [SerializeField]
+        private ComputeShader surfelSampleCS;
 
-        public ComputeShader surfelReLightCS;
+        [SerializeField]
+        private ComputeShader surfelReLightCS;
 
         internal int indexInProbeVolume = -1; // set by parent
 
-        // Shader property IDs
-        private static readonly int ProbePos = Shader.PropertyToID("_probePos");
-
-        private static readonly int RandSeed = Shader.PropertyToID("_randSeed");
-
-        private static readonly int WorldPosCubemap = Shader.PropertyToID("_worldPosCubemap");
-
-        private static readonly int NormalCubemap = Shader.PropertyToID("_normalCubemap");
-
-        private static readonly int AlbedoCubemap = Shader.PropertyToID("_albedoCubemap");
-
-        private static readonly int Surfels = Shader.PropertyToID("_surfels");
-
-        private static readonly int CoefficientSH9 = Shader.PropertyToID("_coefficientSH9");
-
-        private MeshRenderer _renderer;
+        /// <summary>
+        /// Debug renderer
+        /// </summary>
+        internal MeshRenderer Renderer { get; private set; }
 
         private ProbeVolume _volume;
 
@@ -113,7 +89,7 @@ namespace PRTGI
         
         public void ReAllocateIfNeeded()
         {
-            surfels ??= new ComputeBuffer(RayNum, SurfelByteSize);
+            _surfels ??= new ComputeBuffer(RayNum, SurfelByteSize);
 
             if (_coefficientSH9 == null)
             {
@@ -125,11 +101,11 @@ namespace PRTGI
                 }
             }
 
-            readBackBuffer ??= new Surfel[RayNum];
+            ReadBackBuffer ??= new Surfel[RayNum];
             _surfelRadiance ??= new ComputeBuffer(RayNum, sizeof(float) * 3);
             _radianceDebugBuffer ??= new Vector3[RayNum];
             _matPropBlock ??= new MaterialPropertyBlock();
-            if(!_renderer) _renderer = GetComponent<MeshRenderer>();
+            if(!Renderer) Renderer = GetComponent<MeshRenderer>();
             if(!_volume) _volume = GetComponentInParent<ProbeVolume>();
 
             _relightKernel = surfelReLightCS.FindKernel("CSMain");
@@ -140,57 +116,9 @@ namespace PRTGI
 #if UNITY_EDITOR
             if (!gameObject.scene.IsValid()) return;
 #endif
-            surfels?.Release();
+            _surfels?.Release();
             _coefficientSH9?.Release();
             _surfelRadiance?.Release();
-        }
-
-        /// <summary>
-        /// Bake surfels data using PRTBaker
-        /// </summary>
-        /// <param name="prtBaker">PRTBaker instance to use for capture</param>
-        public void BakeData(IPRTBaker prtBaker)
-        {
-            if (prtBaker == null || !prtBaker.IsInitialized())
-            {
-                Debug.LogError("PRTBaker is null or not initialized");
-                return;
-            }
-
-            ReAllocateIfNeeded();
-
-            // Use PRTBaker to capture cubemaps
-            var bakeResult = prtBaker.BakeAtPoint(transform.position);
-
-            // Sample surfels using PRTBaker's render textures
-            SampleSurfels(bakeResult.WorldPosRT, bakeResult.NormalRT, bakeResult.AlbedoRT);
-        }
-
-        /// <summary>
-        /// sample surfel from gbuffer cubemaps
-        /// </summary>
-        /// <param name="worldPosCubemap"></param>
-        /// <param name="normalCubemap"></param>
-        /// <param name="albedoCubemap"></param>
-        private void SampleSurfels(RenderTexture worldPosCubemap, RenderTexture normalCubemap,
-            RenderTexture albedoCubemap)
-        {
-            var kid = surfelSampleCS.FindKernel("CSMain");
-
-            // set necessary data and start sample
-            Vector3 p = gameObject.transform.position;
-            surfelSampleCS.SetVector(ProbePos, new Vector4(p.x, p.y, p.z, 1.0f));
-            surfelSampleCS.SetFloat(RandSeed, Random.Range(0.0f, 1.0f));
-            surfelSampleCS.SetTexture(kid, WorldPosCubemap, worldPosCubemap);
-            surfelSampleCS.SetTexture(kid, NormalCubemap, normalCubemap);
-            surfelSampleCS.SetTexture(kid, AlbedoCubemap, albedoCubemap);
-            surfelSampleCS.SetBuffer(kid, Surfels, surfels);
-
-            // start CS
-            surfelSampleCS.Dispatch(kid, 1, 1, 1);
-
-            // readback
-            surfels.GetData(readBackBuffer);
         }
 
         /// <summary>
@@ -204,26 +132,53 @@ namespace PRTGI
             
             // set necessary data and start sample
             Vector3 p = transform.position;
-            cmd.SetComputeVectorParam(surfelReLightCS, "_probePos", new Vector4(p.x, p.y, p.z, 1.0f));
-            cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, "_surfels", surfels);
-            cmd.SetComputeIntParam(surfelReLightCS, "_indexInProbeVolume", indexInProbeVolume);
+            cmd.SetComputeVectorParam(surfelReLightCS, ShaderProperties.ProbePos, new Vector4(p.x, p.y, p.z, 1.0f));
+            cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, ShaderProperties.Surfels, _surfels);
+            cmd.SetComputeIntParam(surfelReLightCS, ShaderProperties.IndexInProbeVolume, indexInProbeVolume);
             
             // Debug data
             if (_volume.debugMode == ProbeVolumeDebugMode.ProbeRadiance)
             {
                 cmd.SetBufferData(_coefficientSH9, coefficientClearValue);
-                cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, "_coefficientSH9", _coefficientSH9);
-                cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, "_surfelRadiance", _surfelRadiance);
+                cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, ShaderProperties.CoefficientSH9, _coefficientSH9);
+                cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, ShaderProperties.SurfelRadiance, _surfelRadiance);
             }
 
             // SH output to volume storage
-            cmd.SetComputeTextureParam(surfelReLightCS, _relightKernel, "_coefficientVoxel3D",
+            cmd.SetComputeTextureParam(surfelReLightCS, _relightKernel, PRTShaderProperties.CoefficientVoxel3D,
                 _volume.WriteCoefficientVoxel3D);
-            cmd.SetComputeTextureParam(surfelReLightCS, _relightKernel, "_lastFrameCoefficientVoxel3D",
+            cmd.SetComputeTextureParam(surfelReLightCS, _relightKernel, PRTShaderProperties.LastFrameCoefficientVoxel3D,
                 _volume.LastFrameCoefficientVoxel3D);
             
             // start CS
             cmd.DispatchCompute(surfelReLightCS, _relightKernel, 1, 1, 1);
+        }
+
+        internal void SetData(Surfel[] probeReadBackBuffer)
+        {
+            _surfels.SetData(probeReadBackBuffer);
+        }
+        
+        // Shader property IDs
+        private static class ShaderProperties
+        {
+            public static readonly int ProbePos = Shader.PropertyToID("_probePos");
+
+            public static readonly int RandSeed = Shader.PropertyToID("_randSeed");
+
+            public static readonly int WorldPosCubemap = Shader.PropertyToID("_worldPosCubemap");
+
+            public static readonly int NormalCubemap = Shader.PropertyToID("_normalCubemap");
+
+            public static readonly int AlbedoCubemap = Shader.PropertyToID("_albedoCubemap");
+
+            public static readonly int Surfels = Shader.PropertyToID("_surfels");
+
+            public static readonly int CoefficientSH9 = Shader.PropertyToID("_coefficientSH9");
+        
+            public static readonly int SurfelRadiance = Shader.PropertyToID("_surfelRadiance");
+        
+            public static readonly int IndexInProbeVolume = Shader.PropertyToID("_indexInProbeVolume");
         }
     }
 }

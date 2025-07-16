@@ -189,8 +189,8 @@ namespace PRTGI
             foreach (var probe in Probes)
             {
                 // Copy to destination buffer
-                NativeArray<Surfel>.Copy(probe.readBackBuffer, 0, surfelStorageBuffer, destinationIndex, probe.readBackBuffer.Length);
-                destinationIndex += probe.readBackBuffer.Length;
+                NativeArray<Surfel>.Copy(probe.ReadBackBuffer, 0, surfelStorageBuffer, destinationIndex, probe.ReadBackBuffer.Length);
+                destinationIndex += probe.ReadBackBuffer.Length;
             }
 
             volumeData.surfelStorageBuffer = surfelStorageBuffer.Reinterpret<float>(UnsafeUtility.SizeOf<Surfel>()).ToArray();
@@ -224,9 +224,9 @@ namespace PRTGI
             foreach (var probe in Probes)
             {
                 // Copy from source buffer to surfel data
-                NativeArray<Surfel>.Copy(surfelStorageArray, sourceIndex, probe.readBackBuffer, 0, probe.readBackBuffer.Length);
-                probe.surfels.SetData(probe.readBackBuffer);
-                sourceIndex += probe.readBackBuffer.Length;
+                NativeArray<Surfel>.Copy(surfelStorageArray, sourceIndex, probe.ReadBackBuffer, 0, probe.ReadBackBuffer.Length);
+                probe.SetData(probe.ReadBackBuffer);
+                sourceIndex += probe.ReadBackBuffer.Length;
             }
 
             _isDataInitialized = true;
@@ -295,44 +295,6 @@ namespace PRTGI
 
             // Reset probe update rotation when new probes are generated
             ResetProbeUpdateRotation();
-        }
-
-        /// <summary>
-        /// Precompute surfel and bake into <see cref="ProbeVolumeData"/> using PRTBaker
-        /// </summary>
-        /// <param name="prtBaker">PRTBaker instance to use for baking</param>
-        public void BakeData(IPRTBaker prtBaker)
-        {
-            if (prtBaker == null || !prtBaker.IsInitialized())
-            {
-                Debug.LogError("PRTBaker is null or not initialized");
-                return;
-            }
-
-            if (!Probes.Any())
-            {
-                GenerateProbes();
-            }
-
-            // Hide debug spheres
-            foreach (var probe in Probes)
-            {
-                probe.GetComponent<MeshRenderer>().enabled = false;
-            }
-
-            prtBaker.UpdateProgress($"Baking {Probes.Length} probes in volume", 0.0f);
-
-            // Capture surfel using PRTBaker for each probe
-            for (int i = 0; i < Probes.Length; i++)
-            {
-                var probe = Probes[i];
-                float progress = (float)i / Probes.Length;
-                prtBaker.UpdateProgress($"Baking probe {i + 1}/{Probes.Length} at {probe.transform.position}", progress);
-
-                probe.BakeData(prtBaker);
-            }
-
-            prtBaker.UpdateProgress("Storing surfel data...", 1.0f);
         }
 
         /// <summary>

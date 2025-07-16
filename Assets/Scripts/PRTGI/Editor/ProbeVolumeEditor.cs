@@ -13,6 +13,8 @@ namespace PRTGI.Editor
 
         private bool _showBakeSettings;
 
+        private static readonly Color ProbeHandleColor = new(0.2f, 0.8f, 0.1f, 0.125f);
+
         private void OnEnable()
         {
             _probeVolume = (ProbeVolume)target;
@@ -162,15 +164,16 @@ namespace PRTGI.Editor
 
                 Vector3 probePos = _probeVolume.Probes[i].transform.position;
 
-                // Draw selectable handles
-                if (Handles.Button(probePos, Quaternion.identity, _probeVolume.probeHandleSize * 0.2f, _probeVolume.probeHandleSize * 0.2f, Handles.CubeHandleCap))
-                {
-                    _probeVolume.selectedProbeIndex = i;
-                    Repaint();
-                }
-
-                // Draw probe index labels
-                Handles.Label(probePos + Vector3.up * 0.5f, i.ToString());
+               using (new Handles.DrawingScope(ProbeHandleColor))
+               {
+                   // Draw selectable handles
+                   if (Handles.Button(probePos, Quaternion.identity, _probeVolume.probeHandleSize * 0.2f,
+                           _probeVolume.probeHandleSize * 0.2f, Handles.SphereHandleCap))
+                   {
+                       _probeVolume.selectedProbeIndex = i;
+                       Repaint();
+                   }
+               }
             }
         }
     }

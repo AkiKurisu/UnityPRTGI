@@ -44,8 +44,8 @@ namespace PRTGI
             cmd.SetGlobalVector("_coefficientVoxelCorner", voxelCorner);
             cmd.SetGlobalFloat("_skyLightIntensity", volume.skyLightIntensity);
             cmd.SetGlobalFloat("_indirectIntensity", volume.indirectIntensity);
-            cmd.SetGlobalTexture("_coefficientVoxel3D", volume.CurrentFrameCoefficientVoxel3D);
-            cmd.SetGlobalTexture("_lastFrameCoefficientVoxel3D", volume.LastFrameCoefficientVoxel3D);
+            cmd.SetGlobalTexture(PRTShaderProperties.CoefficientVoxel3D, volume.CurrentFrameCoefficientVoxel3D);
+            cmd.SetGlobalTexture(PRTShaderProperties.LastFrameCoefficientVoxel3D, volume.LastFrameCoefficientVoxel3D);
 
             if (volume.debugMode == ProbeVolumeDebugMode.ProbeRadiance)
             {
@@ -69,5 +69,12 @@ namespace PRTGI
             // Advance volume render frame
             volume.AdvanceRenderFrame();
         }
+    }
+
+    internal static class PRTShaderProperties
+    {
+        public static readonly int CoefficientVoxel3D = Shader.PropertyToID("_coefficientVoxel3D");
+        
+        public static readonly int LastFrameCoefficientVoxel3D = Shader.PropertyToID("_lastFrameCoefficientVoxel3D");
     }
 }

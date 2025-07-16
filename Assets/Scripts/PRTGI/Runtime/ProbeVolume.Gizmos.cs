@@ -21,8 +21,8 @@ namespace PRTGI
 
                 Vector3 probePos = Probes[i].transform.position;
 
-                // Draw probe handles for selection
-                DrawProbeHandle(i, probePos);
+                // Draw probe index
+                DrawProbeIndex(i, probePos);
 
                 // Draw debug visualization based on mode
                 if (debugMode == ProbeVolumeDebugMode.ProbeGrid)
@@ -49,27 +49,12 @@ namespace PRTGI
         }
 
         /// <summary>
-        /// Draw selectable handle for probe in scene view
+        /// Draw probe index in scene view
         /// </summary>
         /// <param name="probeIndex">Index of the probe</param>
         /// <param name="probePos">Position of the probe</param>
-        private void DrawProbeHandle(int probeIndex, Vector3 probePos)
+        private static void DrawProbeIndex(int probeIndex, Vector3 probePos)
         {
-            // Different colors based on selection state
-            if (probeIndex == selectedProbeIndex)
-            {
-                Gizmos.color = Color.red;
-                Gizmos.DrawWireSphere(probePos, probeHandleSize * 0.15f);
-                Gizmos.color = Color.yellow;
-            }
-            else
-            {
-                Gizmos.color = Color.white;
-            }
-
-            // Draw clickable handle
-            Gizmos.DrawWireCube(probePos, Vector3.one * probeHandleSize * 0.1f);
-
             // Draw probe index label
             UnityEditor.Handles.Label(probePos + Vector3.up * 0.5f, probeIndex.ToString());
         }
