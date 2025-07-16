@@ -3,8 +3,8 @@
 #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
 #pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
 #pragma multi_compile _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
+#pragma multi_compile _ _RELIGHT_DEBUG_RADIANCE
 
-#define RELIGHT_DEBUG 1
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
@@ -20,8 +20,8 @@ struct Surfel
 
 RWStructuredBuffer<Surfel> _surfels;
 // Layout: [probeSizeX, probeSizeZ, probeSizeY * 9]
-RWTexture3D<int3> _coefficientVoxel3D;
-Texture3D<int3> _lastFrameCoefficientVoxel3D;
+RWTexture3D<float3> _coefficientVoxel3D;
+Texture3D<float3> _lastFrameCoefficientVoxel3D;
 
 float _skyLightIntensity;
 int _indexInProbeVolume;
@@ -32,13 +32,13 @@ float4 _coefficientVoxelCorner;
 float4 _coefficientVoxelSize;
 
 // =============================== Debugging =================================== //
-#ifdef RELIGHT_DEBUG
-    RWStructuredBuffer<int> _coefficientSH9;
+#ifdef _RELIGHT_DEBUG_RADIANCE
+    RWStructuredBuffer<float> _coefficientSH9;
     RWStructuredBuffer<float3> _surfelRadiance;
 #endif
 // =============================== Debugging =================================== //
 
-groupshared int3 groupCoefficients[9];
+groupshared float3 groupCoefficients[512];
 
 // Convert probe index to 3D texture coordinates
 uint3 ProbeIndexToTexture3DCoord(uint probeIndex, uint shIndex, float4 voxelSize)
@@ -62,24 +62,25 @@ uint3 ProbeIndexToTexture3DCoord(uint probeIndex, uint shIndex, float4 voxelSize
     return texCoord;
 }
 
-[numthreads(32, 16, 1)]
-void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
+float3 SHProject(int index, float3 dir)
 {
-    if (groupIndex == 0)
+    switch (index)
     {
-        for (int i = 0; i < 9; i++)
-        {
-            groupCoefficients[i] = int3(0, 0, 0);
-        }
+        case 0: return SH(0, 0, dir);
+        case 1: return SH(1, -1, dir);
+        case 2: return SH(1, 0, dir);
+        case 3: return SH(1, 1, dir);
+        case 4: return SH(2, -2, dir);
+        case 5: return SH(2, -1, dir);
+        case 6: return SH(2, 0, dir);
+        case 7: return SH(2, 1, dir);
+        case 8: return SH(2, 2, dir);
+        default: return 0;
     }
-    GroupMemoryBarrierWithGroupSync();
+}
 
-    uint surfelIndex = id.x * 16 + id.y;
-    Surfel surfel = _surfels[surfelIndex];
-
-    // mainlight property
-    Light mainLight = GetMainLight();
-
+float3 EvaluateSurfelRadiance(Surfel surfel, Light mainLight, float3 dir)
+{
     // mainlight shadow mask in URP
     float4 shadowCoord = TransformWorldToShadowCoord(surfel.position);
     float atten = SampleShadowmap(
@@ -92,18 +93,14 @@ void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 
     // radiance from light
     float NdotL = saturate(dot(surfel.normal, mainLight.direction));
-    float3 radiance = surfel.albedo * mainLight.color * NdotL * atten * (1.0 - surfel.skyMask);
-    
-    // direction from probe to surfel
-    float3 dir = normalize(surfel.position - _probePos.xyz);
+    float3 directLight = surfel.albedo * mainLight.color * NdotL * atten * (1.0 - surfel.skyMask);
 
     // radiance from sky
-    float3 skyColor = SAMPLE_TEXTURECUBE_LOD(_GlossyEnvironmentCubeMap, sampler_GlossyEnvironmentCubeMap, dir, 0).rgb;
-    radiance += skyColor * surfel.skyMask * _skyLightIntensity;  
+    float3 skyLight = SAMPLE_TEXTURECUBE_LOD(_GlossyEnvironmentCubeMap, sampler_GlossyEnvironmentCubeMap, dir, 0).rgb;
+    skyLight *= surfel.skyMask * _skyLightIntensity;
 
     // radiance from last frame
-    float3 history = float3(0, 0, 0);
-    history = SampleSHVoxel3D(
+    float3 history = SampleSHVoxel3D(
         surfel.position, 
         surfel.albedo, 
         surfel.normal,
@@ -112,53 +109,63 @@ void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
         _coefficientVoxelCorner,
         _coefficientVoxelSize
     );
-    radiance += history * _indirectIntensity;
+    history *= _indirectIntensity;
 
-    // SH projection
+    return directLight + skyLight + history;
+}
+
+[numthreads(32, 16, 1)]
+void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
+{
+    uint surfelIndex = id.x * 16 + id.y;
+    Surfel surfel = _surfels[surfelIndex];
+
+    // mainlight property
+    Light mainLight = GetMainLight();
+    
+    // direction from probe to surfel
+    float3 dir = normalize(surfel.position - _probePos.xyz);
+    
+    float3 radiance = EvaluateSurfelRadiance(surfel, mainLight, dir);
+
     const float N = 32 * 16;
-    float3 c[9];
-    c[0] = SH(0, 0, dir) * radiance * 4.0 * PI / N;
-    c[1] = SH(1, -1, dir) * radiance * 4.0 * PI / N;
-    c[2] = SH(1, 0, dir) * radiance * 4.0 * PI / N;
-    c[3] = SH(1, 1, dir) * radiance * 4.0 * PI / N;
-    c[4] = SH(2, -2, dir) * radiance * 4.0 * PI / N;
-    c[5] = SH(2, -1, dir) * radiance * 4.0 * PI / N;
-    c[6] = SH(2, 0, dir) * radiance * 4.0 * PI / N;
-    c[7] = SH(2, 1, dir) * radiance * 4.0 * PI / N;
-    c[8] = SH(2, 2, dir) * radiance * 4.0 * PI / N;
-
-    for (int i = 0; i < 9; i++) 
-    {
-        int3 encoded = int3(EncodeFloatToInt(c[i].x), EncodeFloatToInt(c[i].y), EncodeFloatToInt(c[i].z));
-        InterlockedAdd(groupCoefficients[i].x, encoded.x);
-        InterlockedAdd(groupCoefficients[i].y, encoded.y);
-        InterlockedAdd(groupCoefficients[i].z, encoded.z);
-    }
-
-    GroupMemoryBarrierWithGroupSync();
     
-    // storage to volume
-    if (groupIndex == 0 && _indexInProbeVolume >= 0)
+    for (int index = 0; index < 9; index++)
     {
-        // Write to 3D texture using reduced coefficients
-        for (int i = 0; i < 9; i++)
+        // SH projection, put in loop to reduce register usage
+        float3 ci = SHProject(index, dir) * radiance * 4.0 * PI / N;
+        groupCoefficients[groupIndex] = ci;
+
+        GroupMemoryBarrierWithGroupSync();
+
+        // Parallel reduction
+        for (uint stride = 256; stride > 0; stride >>= 1)
         {
-            int3 texCoord = ProbeIndexToTexture3DCoord(_indexInProbeVolume, i, _coefficientVoxelSize);
-            _coefficientVoxel3D[texCoord] = groupCoefficients[i];
+            if (groupIndex < stride)
+            {
+                groupCoefficients[groupIndex] += groupCoefficients[groupIndex + stride];
+            }
+
+            GroupMemoryBarrierWithGroupSync();
         }
+
+        // Storage to volume
+        if (groupIndex == 0 && _indexInProbeVolume >= 0)
+        {
+            // Write to 3D texture using reduced coefficients
+            int3 texCoord = ProbeIndexToTexture3DCoord(_indexInProbeVolume, index, _coefficientVoxelSize);
+            _coefficientVoxel3D[texCoord] = groupCoefficients[0];
+#ifdef _RELIGHT_DEBUG_RADIANCE
+            _coefficientSH9[index * 3 + 0] = groupCoefficients[0].x;
+            _coefficientSH9[index * 3 + 1] = groupCoefficients[0].y;
+            _coefficientSH9[index * 3 + 2] = groupCoefficients[0].z;
+#endif
+        }
+
+        GroupMemoryBarrierWithGroupSync();
     }
     
-#ifdef RELIGHT_DEBUG
+#ifdef _RELIGHT_DEBUG_RADIANCE
     _surfelRadiance[surfelIndex] = radiance;
-    
-    if (groupIndex == 0)
-    {
-        for (int i = 0; i < 9; i++)
-        {
-            _coefficientSH9[i * 3 + 0] = groupCoefficients[i].x;
-            _coefficientSH9[i * 3 + 1] = groupCoefficients[i].y;
-            _coefficientSH9[i * 3 + 2] = groupCoefficients[i].z;
-        }
-    }
 #endif
 }

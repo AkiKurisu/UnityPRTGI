@@ -31,10 +31,6 @@ namespace PRTGI
             ProbeVolume volume = UObject.FindFirstObjectByType<ProbeVolume>();
             if (volume == null || !volume.IsActivate()) return;
 
-#if UNITY_EDITOR
-            if (volume.debugMode == ProbeVolumeDebugMode.ProbeRadiance) return;
-#endif
-
             volume.SwapCoefficientVoxels();
             volume.ClearCoefficientVoxel(cmd);
 
@@ -51,6 +47,15 @@ namespace PRTGI
             cmd.SetGlobalTexture("_coefficientVoxel3D", volume.CurrentFrameCoefficientVoxel3D);
             cmd.SetGlobalTexture("_lastFrameCoefficientVoxel3D", volume.LastFrameCoefficientVoxel3D);
 
+            if (volume.debugMode == ProbeVolumeDebugMode.ProbeRadiance)
+            {
+                CoreUtils.SetKeyword(cmd, "_RELIGHT_DEBUG_RADIANCE", true);
+            }
+            else
+            {
+                CoreUtils.SetKeyword(cmd, "_RELIGHT_DEBUG_RADIANCE", false);
+            }
+            
             // May only update a subset of probes each frame
             using (ListPool<Probe>.Get(out var probesToUpdate))
             {

@@ -201,23 +201,28 @@ namespace PRTGI
         {
             ReAllocateIfNeeded();
             if (!_volume) return;
+            
             // set necessary data and start sample
             Vector3 p = transform.position;
             cmd.SetComputeVectorParam(surfelReLightCS, "_probePos", new Vector4(p.x, p.y, p.z, 1.0f));
             cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, "_surfels", surfels);
-            cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, "_coefficientSH9", _coefficientSH9);
-            cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, "_surfelRadiance", _surfelRadiance);
+            cmd.SetComputeIntParam(surfelReLightCS, "_indexInProbeVolume", indexInProbeVolume);
+            
+            // Debug data
+            if (_volume.debugMode == ProbeVolumeDebugMode.ProbeRadiance)
+            {
+                cmd.SetBufferData(_coefficientSH9, coefficientClearValue);
+                cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, "_coefficientSH9", _coefficientSH9);
+                cmd.SetComputeBufferParam(surfelReLightCS, _relightKernel, "_surfelRadiance", _surfelRadiance);
+            }
 
             // SH output to volume storage
             cmd.SetComputeTextureParam(surfelReLightCS, _relightKernel, "_coefficientVoxel3D",
                 _volume.WriteCoefficientVoxel3D);
             cmd.SetComputeTextureParam(surfelReLightCS, _relightKernel, "_lastFrameCoefficientVoxel3D",
                 _volume.LastFrameCoefficientVoxel3D);
-
-            cmd.SetComputeIntParam(surfelReLightCS, "_indexInProbeVolume", indexInProbeVolume);
-
+            
             // start CS
-            cmd.SetBufferData(_coefficientSH9, coefficientClearValue);
             cmd.DispatchCompute(surfelReLightCS, _relightKernel, 1, 1, 1);
         }
     }

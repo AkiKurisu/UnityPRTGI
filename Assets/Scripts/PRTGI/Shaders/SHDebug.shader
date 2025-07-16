@@ -24,7 +24,7 @@ Shader "CasualPRT/SHDebug"
             #include "SH.hlsl"
             
             CBUFFER_START(UnityPerMaterial)
-            StructuredBuffer<int> _coefficientSH9; // array size: 3x9=27
+            StructuredBuffer<float> _coefficientSH9; // array size: 3x9=27
             CBUFFER_END
 
             struct appdata
@@ -56,9 +56,9 @@ Shader "CasualPRT/SHDebug"
                 float3 c[9];
                 for (int i = 0; i < 9; i++)
                 {
-                    c[i].x = DecodeFloatFromInt(_coefficientSH9[i * 3 + 0]);
-                    c[i].y = DecodeFloatFromInt(_coefficientSH9[i * 3 + 1]);
-                    c[i].z = DecodeFloatFromInt(_coefficientSH9[i * 3 + 2]);
+                    c[i].x = _coefficientSH9[i * 3 + 0];
+                    c[i].y = _coefficientSH9[i * 3 + 1];
+                    c[i].z = _coefficientSH9[i * 3 + 2];
                 }
 
                 // decode irradiance

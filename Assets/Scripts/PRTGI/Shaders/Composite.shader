@@ -34,7 +34,7 @@ Shader "CasualPRT/Composite"
             // Legacy ComputeBuffer support
             StructuredBuffer<int> _coefficientVoxel;
 
-            Texture3D<int3> _coefficientVoxel3D;
+            Texture3D<float3> _coefficientVoxel3D;
             
             SamplerState sampler_coefficientVoxel3D;
 

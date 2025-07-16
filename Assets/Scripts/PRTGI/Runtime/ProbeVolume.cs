@@ -111,7 +111,7 @@ namespace PRTGI
         internal PRTBakeResolution bakeResolution = PRTBakeResolution._256;
 #endif
 
-        private const RenderTextureFormat Texture3DFormat = RenderTextureFormat.ARGBInt;
+        private const RenderTextureFormat Texture3DFormat = RenderTextureFormat.ARGBFloat;
 
         public Probe[] Probes { get; private set; }
 
@@ -346,7 +346,7 @@ namespace PRTGI
 
         public void ClearCoefficientVoxel(CommandBuffer cmd)
         {
-            if (multiFrameRelight && _frameCount >= 2) return;
+            if (multiFrameRelight) return;
 
             // Clear 3D texture
             _historyBuffer.ClearWriteBuffer(cmd, Color.black);

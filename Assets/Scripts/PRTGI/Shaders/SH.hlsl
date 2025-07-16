@@ -55,19 +55,6 @@ float3 IrradianceSH9(in float3 c[9], in float3 dir)
     return irradiance;
 }
 
-// 使用定点数存储小数, 保留小数点后 5 位
-// 因为 compute shader 的 InterlockedAdd 不支持 float
-#define FIXED_SCALE 100000.0
-
-int EncodeFloatToInt(float x)
-{
-    return int(x * FIXED_SCALE);
-}
-float DecodeFloatFromInt(int x)
-{
-    return float(x) / FIXED_SCALE;
-}
-
 // Convert world position to 3D texture coordinates
 float3 WorldPosToTexture3DCoord(float3 worldPos, float4 _coefficientVoxelSize, float _coefficientVoxelGridSize, float4 _coefficientVoxelCorner)
 {
@@ -95,7 +82,7 @@ float3 ProbeIndex3DToTexture3DCoord(int3 probeIndex3, int shIndex, float4 _coeff
 }
 
 // Helper function to decode SH coefficients from 3D texture for a specific probe
-void DecodeSHCoefficientFromVoxel3D(inout float3 c[9], in Texture3D<int3> coefficientVoxel3D, int3 probeIndex3)
+void DecodeSHCoefficientFromVoxel3D(inout float3 c[9], in Texture3D<float3> coefficientVoxel3D, int3 probeIndex3)
 {
     // Sample RGB components separately for each SH coefficient
     for (int i = 0; i < 9; i++)
@@ -103,11 +90,7 @@ void DecodeSHCoefficientFromVoxel3D(inout float3 c[9], in Texture3D<int3> coeffi
         // Calculate 3D texture coordinates
         int3 texCoord = int3(probeIndex3.x, probeIndex3.z, probeIndex3.y * 9 + i);
 
-        int3 fixedValue = coefficientVoxel3D.Load(int4(texCoord, 0));
-        // Load and decode the fixed-point values
-        c[i].r = DecodeFloatFromInt(fixedValue.x);
-        c[i].g = DecodeFloatFromInt(fixedValue.y);
-        c[i].b = DecodeFloatFromInt(fixedValue.z);
+        c[i] = coefficientVoxel3D.Load(int4(texCoord, 0));
     }
 }
 
@@ -135,18 +118,6 @@ bool IsIndex3DInsideVoxel(int3 probeIndex3, float4 _coefficientVoxelSize)
     return isInsideVoxel;
 }
 
-void DecodeSHCoefficientFromVoxel(inout float3 c[9], in StructuredBuffer<int> _coefficientVoxel, int probeIndex)
-{
-    const int coefficientByteSize = 27; // 3x9 for SH9 RGB
-    int offset = probeIndex * coefficientByteSize;
-    for (int i = 0; i < 9; i++)
-    {
-        c[i].x = DecodeFloatFromInt(_coefficientVoxel[offset + i * 3 + 0]);
-        c[i].y = DecodeFloatFromInt(_coefficientVoxel[offset + i * 3 + 1]);
-        c[i].z = DecodeFloatFromInt(_coefficientVoxel[offset + i * 3 + 2]);
-    }
-}
-
 float3 GetProbePositionFromIndex3D(int3 probeIndex3, float _coefficientVoxelGridSize, float4 _coefficientVoxelCorner)
 {
     float3 res = float3(probeIndex3.x, probeIndex3.y, probeIndex3.z) * _coefficientVoxelGridSize + _coefficientVoxelCorner.xyz;
@@ -170,7 +141,7 @@ float3 SampleSHVoxel3D(
     in float3 worldPos, 
     in float3 albedo, 
     in float3 normal,
-    in Texture3D<int3> coefficientVoxel3D,
+    in Texture3D<float3> coefficientVoxel3D,
     in float coefficientVoxelGridSize,
     in float4 coefficientVoxelCorner,
     in float4 coefficientVoxelSize

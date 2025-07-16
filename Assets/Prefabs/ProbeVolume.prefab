@@ -50,8 +50,8 @@ MonoBehaviour:
   probeSizeZ: 5
   probeGridSize: 4
   data: {fileID: 11400000, guid: 33f1928f6479bc34787575bb1184cece, type: 2}
-  skyLightIntensity: 2
-  indirectIntensity: 3
+  skyLightIntensity: 3
+  indirectIntensity: 4
   multiFrameRelight: 1
   probesPerFrameUpdate: 15
   debugMode: 0
